@@ -1,122 +1,86 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Spike RISC-V ISA Simulator",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f6b414",
+    "light": "#253374"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/ea1a70b8-af95-44c3-92db-79c53b4984d2.png",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/riscv-software-src/riscv-isa-sim"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/riscv-software-src/riscv-isa-sim"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Usage",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "usage/running-programs",
+              "usage/isa-configuration",
+              "usage/memory-configuration",
+              "usage/debugging"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Extensions & Customization",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "extensions/custom-instructions",
+              "extensions/rocc-extensions",
+              "extensions/mmio-devices"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Advanced",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "advanced/cache-simulation",
+              "advanced/gdb-openocd",
+              "advanced/logging-tracing",
+              "advanced/htif-fesvr"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Command Reference",
             "pages": [
-              "api-reference/introduction"
+              "reference/command-line-options",
+              "reference/interactive-debug-commands",
+              "reference/isa-strings"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Supported ISA Extensions",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "reference/base-isas",
+              "reference/standard-extensions",
+              "reference/vector-extensions",
+              "reference/cryptography-extensions"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

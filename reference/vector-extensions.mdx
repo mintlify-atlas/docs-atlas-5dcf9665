@@ -1,0 +1,178 @@
+---
+title: "Vector Extensions"
+description: "The RISC-V V vector extension and all vector sub-extensions supported by Spike, including vector cryptography."
+---
+
+Spike implements the RISC-V V vector extension at v1.0, along with a comprehensive set of vector sub-extensions for bit manipulation, cryptography, and data processing.
+
+<Warning>
+The V extension and all vector sub-extensions require a 64-bit host machine. They are not available when Spike is built or run on a 32-bit host.
+</Warning>
+
+---
+
+## V extension
+
+The V extension adds variable-length vector registers and a set of vector instructions for operating on arrays of integer or floating-point elements. It is a functional simulation — Spike models the architectural state and instruction behavior correctly, but does not model timing, throughput, or microarchitectural effects.
+
+**Version:** v1.0  
+**Requirement:** 64-bit host
+
+### ISA string
+
+Include `v` in the ISA string to enable the vector extension:
+
+```bash
+spike --isa=rv64imafdc_v pk vector_prog
+spike --isa=rv64imafdcv pk vector_prog   # equivalent shorthand
+```
+
+The `v` letter implicitly enables the Zve64d profile (64-bit vector with double-precision float support) when used with a `d` base.
+
+### Example
+
+```bash
+spike --isa=rv64imafdcv pk ./my_vector_program
+```
+
+### Vector configuration registers
+
+The V extension uses three key architectural registers to configure vector operation:
+
+| Register | Description                                              |
+|----------|----------------------------------------------------------|
+| `vtype`  | Vector type: element width (SEW) and LMUL grouping factor |
+| `vl`     | Vector length: number of active elements in an operation |
+| `vstart` | Starting element index for partially-completed operations |
+
+These are set via the `vsetvl`, `vsetvli`, and `vsetivli` instructions before executing vector operations.
+
+### What vector simulation means
+
+Spike provides a functionally accurate simulation of the V extension:
+
+- All vector instructions execute with correct results for any legal `vtype` and `vl` configuration.
+- Exception behavior (illegal `vtype`, element faults) is modeled correctly.
+- Performance is **not** modeled — no timing, no pipeline, no throughput simulation.
+- Spike is useful for testing vector software correctness, not for performance estimation.
+
+<Tip>
+The VLEN (vector register length in bits) and ELEN (maximum element width) values are fixed at build time in Spike. Check the `vreg` debug command output to see the VLEN and ELEN values for a running simulation.
+</Tip>
+
+---
+
+## Vector sub-extensions
+
+### Bit manipulation
+
+| Extension | Description                                 | Version |
+|-----------|---------------------------------------------|---------|
+| Zvbb      | Vector basic bit manipulation               | v1.0    |
+| Zvbc      | Vector carry-less multiplication            | v1.0    |
+| Zvzip     | Vector zip and unzip                        | v0.1    |
+
+**Zvbb** adds vector bit manipulation instructions: bit reversal (`VBREV`, `VBREV8`), byte reversal (`VREV8`), count leading/trailing zeros (`VCLZ`, `VCTZ`), population count (`VCPOP`), and rotate instructions.
+
+**Zvbc** adds vector carry-less multiply instructions (`VCLMUL`, `VCLMULH`), operating on 64-bit elements.
+
+**Zvzip** provides vector zip (interleave) and unzip (deinterleave) operations for rearranging element pairs.
+
+<Note>
+Zvzip is at version v0.1 and is not yet ratified. Its encoding and semantics may change.
+</Note>
+
+### BFloat16 support
+
+| Extension | Description                                          | Version |
+|-----------|------------------------------------------------------|---------|
+| Zvfbfmin  | Vector BFloat16 conversions                          | v0.6    |
+| Zvfbfwma  | Vector BFloat16 widening multiply-add                | v0.6    |
+
+**Zvfbfmin** adds vector instructions for converting between BFloat16 and single-precision formats. **Zvfbfwma** extends this with widening fused multiply-add, accumulating BFloat16 products into single-precision results — the core operation used in machine learning workloads.
+
+<Note>
+Both Zvfbfmin and Zvfbfwma are at version v0.6 and have not been ratified.
+</Note>
+
+### Vector type checking
+
+| Extension | Description         | Version |
+|-----------|---------------------|---------|
+| Zvkt      | Vector type checking | v1.0    |
+
+**Zvkt** constrains implementations to support all element widths for certain operations, ensuring software portability across vector implementations.
+
+### Vector cryptography
+
+The vector cryptography extensions bring the scalar cryptography algorithms to vector registers, enabling high-throughput parallel cryptographic computation. See [Cryptography Extensions](/reference/cryptography-extensions) for full details on the underlying algorithms.
+
+#### Primitive extensions
+
+| Extension | Description                          | Version |
+|-----------|--------------------------------------|---------|
+| Zvkned    | Vector AES block cipher (NIST)       | v1.0    |
+| Zvknha    | Vector SHA-256 hash (NIST)           | v1.0    |
+| Zvknhb    | Vector SHA-512 hash (NIST)           | v1.0    |
+| Zvksed    | Vector SM4 block cipher (ShangMi)    | v1.0    |
+| Zvksh     | Vector SM3 hash (ShangMi)            | v1.0    |
+| Zvkg      | Vector GCM/GMAC                      | v1.0    |
+
+**Zvkned** provides vector AES encrypt and decrypt round instructions (`VAESZ.VS`, `VAESE*.VV`, `VAESD*.VV`).
+
+**Zvknha** and **Zvknhb** implement SHA-2 vector message schedule and compression instructions. Zvknha supports SHA-256 on 32- and 64-bit element widths; Zvknhb adds SHA-512 on 64-bit elements.
+
+**Zvksed** implements SM4 block cipher encryption and decryption vector instructions.
+
+**Zvksh** implements SM3 hash function vector message expansion and compression instructions.
+
+**Zvkg** implements GHASH, the authentication component of GCM (Galois/Counter Mode), as a vector operation for accelerating AES-GCM authenticated encryption.
+
+#### Suite extensions
+
+The suite extensions are convenience groupings of the primitive extensions:
+
+| Extension | Composition         | Description                         | Version |
+|-----------|---------------------|-------------------------------------|---------|
+| Zvkn      | Zvkned+Zvknha+Zvknhb+Zvkb+Zvkt | Vector NIST algorithm suite   | v1.0    |
+| Zvknc     | Zvkn+Zvbc           | Zvkn with carry-less multiply       | v1.0    |
+| Zvkng     | Zvkn+Zvkg           | Zvkn with GCM/GMAC                  | v1.0    |
+| Zvks      | Zvksed+Zvksh+Zvbb+Zvkt | Vector ShangMi algorithm suite  | v1.0    |
+| Zvksc     | Zvks+Zvbc           | Zvks with carry-less multiply       | v1.0    |
+| Zvksg     | Zvks+Zvkg           | Zvks with GCM/GMAC                  | v1.0    |
+
+**Zvkn** bundles the NIST suite (AES + SHA-256/512) with basic bit manipulation for key schedule support. **Zvknc** and **Zvkng** extend Zvkn with carry-less multiply or GCM respectively, enabling full AES-GCM in hardware.
+
+**Zvks** bundles the ShangMi suite (SM4 + SM3) with bit manipulation. **Zvksc** and **Zvksg** add carry-less multiply or GCM support.
+
+### ISA string examples with vector extensions
+
+```bash
+# Vector NIST cryptography suite
+spike --isa=rv64imafdcv_zvkn pk prog
+
+# Vector ShangMi suite with GCM support
+spike --isa=rv64imafdcv_zvksg pk prog
+
+# Vector bit manipulation
+spike --isa=rv64imafdcv_zvbb_zvbc pk prog
+
+# Full vector with BFloat16 support
+spike --isa=rv64imafdcv_zvfbfmin_zvfbfwma pk prog
+```
+
+---
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Base ISAs" href="/reference/base-isas" icon="microchip">
+    RV32I, RV64I, RV32E, and RV64E base instruction sets.
+  </Card>
+  <Card title="Cryptography Extensions" href="/reference/cryptography-extensions" icon="lock">
+    Scalar cryptography extensions (Zk, Zkn, Zks groups).
+  </Card>
+  <Card title="Standard Extensions" href="/reference/standard-extensions" icon="puzzle-piece">
+    Integer, float, compressed, and system extensions.
+  </Card>
+</CardGroup>

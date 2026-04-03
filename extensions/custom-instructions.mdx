@@ -1,0 +1,200 @@
+---
+title: "Custom Instructions"
+description: "Add new instructions directly to Spike's static instruction set by implementing a behavior header, registering an opcode, and rebuilding."
+---
+
+Custom instructions let you extend Spike's instruction set at compile time. Each instruction is described by a small C++ header file, an opcode/mask pair in `encoding.h`, and an entry in the build system. After rebuilding, Spike recognizes and simulates the instruction like any standard ISA instruction.
+
+For runtime-loadable custom instructions that don't require a full rebuild, see [RoCC Extensions](/extensions/rocc-extensions).
+
+## Adding a new instruction
+
+<Steps>
+
+### Create the instruction behavior header
+
+Create `riscv/insns/<new_instruction_name>.h`. The file body is a C++ expression or statement block that implements the instruction's functional behavior. It is compiled into a generated wrapper function with this signature:
+
+```cpp
+reg_t func(processor_t* p, insn_t insn, reg_t pc);
+```
+
+The function must return the next PC value (typically `pc + 4`).
+
+Look at existing instruction headers in `riscv/insns/` as a starting point. Several simple examples:
+
+```cpp
+// riscv/insns/add.h — integer addition
+WRITE_RD(sext_xlen(RS1 + RS2));
+```
+
+```cpp
+// riscv/insns/addi.h — add immediate
+WRITE_RD(sext_xlen(RS1 + insn.i_imm()));
+```
+
+```cpp
+// riscv/insns/lb.h — load byte (sign-extended)
+WRITE_RD(MMU.load<int8_t>(RS1 + insn.i_imm()));
+```
+
+```cpp
+// riscv/insns/beq.h — branch if equal
+if (RS1 == RS2)
+  set_pc(BRANCH_TARGET);
+```
+
+### Register the opcode
+
+Add the opcode bit-pattern and mask to `riscv/opcodes.h` (which includes `riscv/encoding.h`):
+
+```cpp
+#define MATCH_MY_INSN  0x0000000b   // bits that must match
+#define MASK_MY_INSN   0xfe00707f   // bits that are significant
+
+DECLARE_INSN(my_insn, MATCH_MY_INSN, MASK_MY_INSN)
+```
+
+Alternatively, use the [riscv-opcodes](https://github.com/riscv/riscv-opcodes) package to generate these definitions automatically:
+
+```bash
+cd ../riscv-opcodes
+vi opcodes          # add a line for your new instruction
+make install        # writes MATCH_/MASK_ defines and DECLARE_INSN to encoding.h
+```
+
+### Add the instruction to the build
+
+Open `riscv/riscv.mk.in` and add the instruction name to the appropriate `riscv_insn_ext_*` variable (or create a new group variable and include it in `riscv_insn_list`):
+
+```makefile
+riscv_insn_ext_i = \
+    add \
+    addi \
+    ...
+    my_insn \    # <-- add here
+```
+
+The build system generates a `.cc` source file for each entry using `insn_template.cc` as a wrapper.
+
+### Rebuild the simulator
+
+```bash
+cd build
+make
+```
+
+</Steps>
+
+## The `insn_desc_t` structure
+
+Every instruction in Spike — built-in or custom — is described by `insn_desc_t`, defined in `riscv/processor.h`:
+
+```cpp
+struct insn_desc_t
+{
+  insn_bits_t match;        // bits that identify this instruction
+  insn_bits_t mask;         // mask of significant bits
+  insn_func_t fast_rv32i;   // fast path, RV32I
+  insn_func_t fast_rv64i;   // fast path, RV64I
+  insn_func_t fast_rv32e;   // fast path, RV32E
+  insn_func_t fast_rv64e;   // fast path, RV64E
+  insn_func_t logged_rv32i; // logged path, RV32I
+  insn_func_t logged_rv64i; // logged path, RV64I
+  insn_func_t logged_rv32e; // logged path, RV32E
+  insn_func_t logged_rv64e; // logged path, RV64E
+};
+```
+
+An instruction is dispatched when `(encoded_bits & mask) == match`. Spike selects the appropriate function pointer based on the current XLEN (32 or 64), the E base ISA variant, and whether commit logging is enabled.
+
+### `insn_func_t` — the instruction function signature
+
+```cpp
+typedef reg_t (*insn_func_t)(processor_t*, insn_t, reg_t);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `p` | `processor_t*` | The processor executing the instruction |
+| `insn` | `insn_t` | The encoded instruction word; provides field accessors |
+| `pc` | `reg_t` | The current program counter |
+| **return** | `reg_t` | The next PC (usually `pc + 4`; branches/jumps return the target) |
+
+### Fast vs. logged variants
+
+Each `insn_desc_t` carries two sets of function pointers:
+
+- **Fast** (`fast_*`) — used during normal simulation. No commit log entries are written.
+- **Logged** (`logged_*`) — used when `-l` / `--log-commits` is active. These variants call `STATE.log_reg_write[...]` to record register writes, producing a trace of committed instructions.
+
+If your instruction behaves identically in both modes (the common case), supply the same function pointer for all eight slots, as the `cflush` extension does:
+
+```cpp
+// All eight slots share the same implementation
+{0xFC000073, 0xFFF07FFF,
+ custom_cflush, custom_cflush,   // fast   rv32i, rv64i
+ custom_cflush, custom_cflush,   // fast   rv32e, rv64e
+ custom_cflush, custom_cflush,   // logged rv32i, rv64i
+ custom_cflush, custom_cflush},  // logged rv32e, rv64e
+```
+
+## Macros available in instruction headers
+
+Instruction headers are compiled inside a generated wrapper that defines a rich set of helper macros from `riscv/decode_macros.h`:
+
+### Register access
+
+| Macro | Description |
+|-------|-------------|
+| `RS1` | Read integer source register 1 (`insn.rs1()`) |
+| `RS2` | Read integer source register 2 (`insn.rs2()`) |
+| `RS3` | Read integer source register 3 (`insn.rs3()`) |
+| `RD` | Read integer destination register (`insn.rd()`) |
+| `WRITE_RD(value)` | Write `value` to the destination register |
+| `READ_REG(reg)` | Read an arbitrary integer register by number |
+| `WRITE_REG(reg, value)` | Write an arbitrary integer register by number |
+| `READ_FREG(reg)` | Read a floating-point register |
+| `WRITE_FREG(reg, value)` | Write a floating-point register |
+
+### Memory access
+
+| Macro | Description |
+|-------|-------------|
+| `MMU` | Dereference of `p->get_mmu()`; use `MMU.load<T>(addr)` and `MMU.store<T>(addr, val)` |
+
+### State and control
+
+| Macro | Description |
+|-------|-------------|
+| `STATE` | Dereference of `p->get_state()`; exposes `XPR`, `FPR`, `pc`, CSRs, etc. |
+| `P` | Dereference of `p` (the `processor_t`) |
+| `set_pc(x)` | Set the next PC; validates alignment |
+| `BRANCH_TARGET` | `pc + insn.sb_imm()` — branch offset target |
+| `JUMP_TARGET` | `pc + insn.uj_imm()` — jump offset target |
+| `sext_xlen(x)` | Sign-extend `x` to the current XLEN |
+| `zext_xlen(x)` | Zero-extend `x` to the current XLEN |
+
+### Checks and requirements
+
+| Macro | Description |
+|-------|-------------|
+| `require(x)` | Throw `trap_illegal_instruction` if `x` is false |
+| `require_privilege(p)` | Require privilege level `>= p` (e.g., `PRV_M`) |
+| `require_extension(s)` | Require ISA extension `s` to be enabled |
+| `require_rv32` / `require_rv64` | Require a specific XLEN |
+
+<Note>
+Instruction headers are `#include`d into generated `.cc` files compiled with `-DDECODE_MACRO_USAGE_LOGGED=0` (fast path) or `-DDECODE_MACRO_USAGE_LOGGED=1` (logged path). The `WRITE_REG` and `WRITE_FREG` macros use this flag to conditionally emit commit-log entries.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="RoCC Extensions" icon="plug" href="/extensions/rocc-extensions">
+    Load custom instructions at runtime without rebuilding Spike, using the extension_t interface and shared libraries.
+  </Card>
+  <Card title="MMIO Plugin Devices" icon="microchip" href="/extensions/mmio-devices">
+    Attach memory-mapped I/O devices to Spike's address space via shared libraries.
+  </Card>
+</CardGroup>

@@ -1,0 +1,258 @@
+---
+title: "Command-Line Options"
+description: "Complete reference for all Spike host options, organized by category."
+---
+
+## Synopsis
+
+```bash
+spike [host options] <target program> [target options]
+```
+
+All options listed here are **host options** — they configure Spike itself. Arguments after the target program binary are passed through to the simulated program.
+
+---
+
+## Simulation
+
+Options that control the number of processors, their identities, the ISA to simulate, and execution limits.
+
+| Option | Description | Default |
+|---|---|---|
+| `-p<n>` | Simulate `<n>` processors. | `1` |
+| `--hartids=<a,b,...>` | Explicitly assign hart IDs. Comma-separated list. Must match the processor count if `-p` is also given. | `0,1,...` |
+| `--isa=<name>` | RISC-V ISA string. See [ISA Strings](/reference/isa-strings) for the full format. | `rv64imafdc_zicntr_zihpm` |
+| `--priv=<m\|mu\|msu>` | Privilege modes to support: machine-only (`m`), machine + user (`mu`), or machine + supervisor + user (`msu`). | `MSU` |
+| `--pc=<address>` | Override the ELF entry point with a hex address. | ELF entry point |
+| `--instructions=<n>` | Stop simulation after `n` instructions have retired. | (no limit) |
+
+**Examples**
+
+```bash
+# Simulate 4 harts
+spike -p4 pk hello
+
+# Use explicit hart IDs 0 and 2
+spike -p2 --hartids=0,2 pk hello
+
+# Limit to RV32IM
+spike --isa=rv32im pk hello
+
+# Stop after 1 million instructions
+spike --instructions=1000000 pk hello
+```
+
+---
+
+## Memory
+
+Options that control the target memory layout, endianness, kernel loading, and device tree handling.
+
+| Option | Description | Default |
+|---|---|---|
+| `-m<n>` | Provide `<n>` MiB of target memory starting at `DRAM_BASE`. | `2048` |
+| `-m<a:m,b:n,...>` | Provide explicit memory regions. Each region is a base address and byte size pair. Base addresses must be 4 KiB-aligned. Overlapping regions are merged. | — |
+| `--big-endian` | Use a big-endian memory system. | little-endian |
+| `--kernel=<path>` | Load a flat kernel image into memory. | — |
+| `--initrd=<path>` | Load a kernel initrd image into memory. | — |
+| `--bootargs=<args>` | Custom bootargs string passed to the kernel via the device tree. | `console=ttyS0 earlycon` |
+| `--dtb=<path>` | Use the specified device tree blob instead of auto-generating one. | auto-generated |
+| `--disable-dtb` | Do not write any device tree blob into memory. | (DTB enabled) |
+| `--dtb-discovery` | Enable direct device discovery from the DTB. Requires `--dtb`. Incompatible with `-m` and `--device`. | disabled |
+| `--dump-dts` | Print the device tree source string to stdout and exit. | — |
+| `--blocksz=<size>` | Cache block size in bytes for CMO operations. Must be a power of 2 between 16 and 4096. | `64` |
+
+**Examples**
+
+```bash
+# 512 MiB of memory
+spike -m512 pk hello
+
+# Two explicit memory regions
+spike -m0x80000000:0x10000000,0x90000000:0x8000000 pk hello
+
+# Load a Linux kernel with a custom initrd
+spike --kernel=Image --initrd=rootfs.cpio.gz --bootargs="console=ttyS0" vmlinux
+
+# Dump the generated device tree and exit
+spike --dump-dts pk hello
+```
+
+<Warning>
+`--dtb-discovery` is incompatible with `-m`, `--device`, and `--disable-dtb`. Spike will exit with an error if these are combined.
+</Warning>
+
+---
+
+## Debugging
+
+Options that enable interactive debugging and remote debugger connections.
+
+| Option | Description | Default |
+|---|---|---|
+| `-d` | Start in interactive debug mode. Drops to the `(spike)` prompt before executing the first instruction. | — |
+| `-s` | Route debug I/O through a socket rather than stdin/stderr. Use with `-d`. Requires Boost.Asio at build time. | — |
+| `--halted` | Start simulation halted, waiting for a debugger to connect via JTAG/OpenOCD before executing any instructions. | — |
+| `--debug-cmd=<name>` | Read debug commands from a file instead of stdin. Use with `-d`. | — |
+| `--rbb-port=<port>` | Listen on `<port>` for a remote bitbang (JTAG) connection from OpenOCD. | — |
+
+**Examples**
+
+```bash
+# Launch in interactive debug mode
+spike -d pk hello
+
+# Start halted and listen for OpenOCD on port 9824
+spike --halted --rbb-port=9824 pk hello
+
+# Feed debug commands from a script
+spike -d --debug-cmd=commands.txt pk hello
+```
+
+<Tip>
+Even without `-d`, you can drop into interactive debug mode at any time by pressing **Ctrl+C** during a running simulation.
+</Tip>
+
+---
+
+## Logging
+
+Options that control execution logging and PC histogram tracking.
+
+| Option | Description | Default |
+|---|---|---|
+| `-l` | Generate a log of execution to stderr (or to the file set by `--log`). | — |
+| `--log=<name>` | File name for the execution log. Use with `-l`. | stderr |
+| `--log-commits` | Log all instruction commits, including register write-back values. | — |
+| `--log-cache-miss` | Log all cache misses (requires a cache model via `--ic`/`--dc`/`--l2`). | — |
+| `-g` | Track a histogram of program counter values. Prints on exit. | — |
+
+**Examples**
+
+```bash
+# Write execution log to a file
+spike -l --log=trace.log pk hello
+
+# Log commits (register writes visible)
+spike --log-commits pk hello
+
+# Track PC histogram
+spike -g pk hello
+```
+
+---
+
+## Cache
+
+Options that instantiate a cache model. All three levels use the same geometry format: `<S>:<W>:<B>` where `S` is the number of sets, `W` is the number of ways, and `B` is the block size in bytes. Both `S` and `B` must be powers of 2.
+
+| Option | Description | Default |
+|---|---|---|
+| `--ic=<S>:<W>:<B>` | Instantiate an L1 instruction cache model. | — |
+| `--dc=<S>:<W>:<B>` | Instantiate an L1 data cache model. | — |
+| `--l2=<S>:<W>:<B>` | Instantiate an L2 unified cache model. If `--ic` or `--dc` are also set, misses from those caches are directed to this L2. | — |
+
+**Examples**
+
+```bash
+# 32 KiB direct-mapped I$ and D$ with 64-byte blocks, 1 MiB 8-way L2
+spike --ic=512:1:64 --dc=512:1:64 --l2=16384:8:64 pk hello
+
+# Log cache misses from L1 data cache
+spike --dc=512:4:64 --log-cache-miss pk hello
+```
+
+---
+
+## Extensions
+
+Options that load external shared libraries and attach devices or RoCC accelerators.
+
+| Option | Description | Default |
+|---|---|---|
+| `--extlib=<name>` | Load a shared library (`.so`). Can be specified multiple times. Libraries are loaded with `RTLD_NOW \| RTLD_GLOBAL`, making their symbols available to `--device` and `--extension`. | — |
+| `--extension=<name>` | Attach a RoCC co-processor extension registered in a loaded `--extlib`. Can be specified multiple times. | — |
+| `--device=<name>[,<args>]` | Attach an MMIO plugin device from a loaded `--extlib`. Pass optional device-specific arguments as comma-separated values after the device name. | — |
+
+**Examples**
+
+```bash
+# Load a shared library and attach a RoCC extension
+spike --extlib=myext.so --extension=myrocc pk hello
+
+# Load a library and attach an MMIO device with arguments
+spike --extlib=mydevice.so --device=uart,0x10000000,9600 pk hello
+```
+
+---
+
+## PMP
+
+Options that configure Physical Memory Protection.
+
+| Option | Description | Default |
+|---|---|---|
+| `--pmpregions=<n>` | Number of PMP regions to implement. | `16` |
+| `--pmpgranularity=<n>` | PMP granularity in bytes. Must be a power of 2 and at least 4. | `4` |
+
+**Example**
+
+```bash
+# Disable PMP entirely
+spike --pmpregions=0 pk hello
+
+# 64-byte PMP granularity
+spike --pmpgranularity=64 pk hello
+```
+
+---
+
+## Debug Module
+
+Options that configure the RISC-V External Debug Module (DM). These affect behavior when using `--halted` and `--rbb-port` with OpenOCD/GDB.
+
+| Option | Description | Default |
+|---|---|---|
+| `--triggers=<n>` | Number of hardware breakpoint triggers. | `4` |
+| `--dm-progsize=<words>` | Program buffer size in 32-bit words. | `2` |
+| `--dm-datacount=<n>` | Number of data registers available to the debug module. | `2` |
+| `--dm-sba=<bits>` | Maximum system bus access width in bits. `0` disables system bus access. | `0` |
+| `--dm-auth` | Require the debugger to authenticate before accessing the debug module. | disabled |
+| `--dmi-rti=<n>` | Number of Run-Test/Idle cycles required per DMI access. | `0` |
+| `--dm-abstract-rti=<n>` | Number of Run-Test/Idle cycles required per abstract command execution. | `0` |
+| `--dm-no-hasel` | Disable hart array select (hasel) support. | (hasel enabled) |
+| `--dm-no-abstract-csr` | Disable abstract command access to CSRs. | (enabled) |
+| `--dm-no-abstract-fpr` | Disable abstract command access to floating-point registers. | (enabled) |
+| `--dm-no-halt-groups` | Disable halt group support. | (enabled) |
+| `--dm-no-impebreak` | Disable implicit `ebreak` at the end of the program buffer. | (enabled) |
+| `--dm-no-abstractauto` | Disable the `abstractauto` register. | (enabled) |
+
+**Example**
+
+```bash
+# Larger program buffer and 64-bit system bus access
+spike --halted --rbb-port=9824 --dm-progsize=8 --dm-sba=64 pk hello
+```
+
+---
+
+## CLINT
+
+| Option | Description | Default |
+|---|---|---|
+| `--real-time-clint` | Increment the CLINT `mtime` counter at the host's real wall-clock rate instead of at the simulated instruction rate. | simulated rate |
+
+**Example**
+
+```bash
+# Real-time timer (useful for time-sensitive software)
+spike --real-time-clint pk hello
+```
+
+---
+
+## Miscellaneous
+
+| Option | Description |
+|---|---|
+| `-h`, `--help` | Print the help message and exit. |

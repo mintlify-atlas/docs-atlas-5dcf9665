@@ -1,0 +1,311 @@
+---
+title: "RoCC Extensions"
+description: "Implement and load Rocket Custom Coprocessor (RoCC) extensions at runtime using Spike's extension_t C++ interface and shared libraries."
+---
+
+RoCC (Rocket Custom Coprocessor) is the RISC-V standard interface for attaching a tightly-coupled custom coprocessor to a core. Spike models RoCC by letting you write a C++ class that inherits from `extension_t` (or the higher-level `rocc_t`), compile it as a shared library, and load it into Spike at startup — no simulator rebuild required.
+
+## The `extension_t` interface
+
+All RoCC extensions inherit from `extension_t`, declared in `riscv/extension.h`:
+
+```cpp
+class extension_t
+{
+ public:
+  // Required: return instruction descriptors for this extension's custom instructions
+  virtual std::vector<insn_desc_t> get_instructions(const processor_t &proc) = 0;
+
+  // Required: return disassemblers for this extension's custom instructions
+  virtual std::vector<disasm_insn_t*> get_disasms(const processor_t *proc = nullptr) = 0;
+
+  // Optional: return custom CSRs to register with the processor
+  virtual std::vector<csr_t_p> get_csrs(processor_t &) const { return {}; }
+
+  // Required: return the extension's unique name string
+  virtual const char* name() const = 0;
+
+  // Optional: called when the processor is reset
+  virtual void reset(processor_t &) {}
+
+  // Optional: called when the debug flag changes
+  virtual void set_debug(bool value, const processor_t &) {}
+
+  virtual ~extension_t() = default;
+
+ protected:
+  void illegal_instruction(processor_t &proc);  // throw trap_illegal_instruction
+  void raise_interrupt(processor_t &proc);       // signal COP interrupt
+  void clear_interrupt(processor_t &proc);       // clear COP interrupt
+};
+```
+
+### Method reference
+
+#### `get_instructions()`
+
+Returns a vector of `insn_desc_t` descriptors. Each descriptor specifies the bit pattern (`match`), significant bits (`mask`), and eight function pointers covering the fast/logged × RV32I/RV64I/RV32E/RV64E combinations. See [Custom Instructions — The insn_desc_t structure](/extensions/custom-instructions#the-insn_desc_t-structure) for the full field list.
+
+#### `get_disasms()`
+
+Returns a vector of `disasm_insn_t*` objects that teach Spike's disassembler how to print the extension's instructions. Each `disasm_insn_t` takes a mnemonic string, a match value, a mask value, and a list of `arg_t*` operand formatters:
+
+```cpp
+new disasm_insn_t("my.op", MATCH_MY_OP, MASK_MY_OP, {&xrs1, &xrs2})
+```
+
+Return an empty vector if disassembly is not needed.
+
+#### `get_csrs()`
+
+Returns a vector of `csr_t_p` (shared pointers to `csr_t`) to register additional CSRs with the processor. The default implementation returns an empty vector — override only if your extension requires custom CSRs.
+
+#### `name()`
+
+Returns a `const char*` identifying the extension. This string is used by `--extension=<name>` on the command line and by `find_extension()` internally.
+
+#### `reset()`
+
+Called whenever the processor is reset. Use this to reinitialize extension state.
+
+#### `set_debug()`
+
+Called when Spike's interactive debug mode is toggled. Use this to enable or disable verbose tracing inside your extension.
+
+### Helper methods
+
+These protected methods are provided by `extension_t` for use inside instruction implementations:
+
+| Method | Description |
+|--------|-------------|
+| `illegal_instruction(proc)` | Throws `trap_illegal_instruction(0)` |
+| `raise_interrupt(proc)` | Posts a coprocessor interrupt (`IRQ_COP`); does not return |
+| `clear_interrupt(proc)` | Clears the coprocessor interrupt |
+
+## The `rocc_t` helper class
+
+For extensions that use the four standard RoCC custom opcodes (`custom0`–`custom3`), inherit from `rocc_t` instead of `extension_t`. It handles `get_instructions()` and `get_disasms()` automatically and exposes four virtual methods to override:
+
+```cpp
+class rocc_t : public extension_t
+{
+ public:
+  virtual reg_t custom0(processor_t*, rocc_insn_t insn, reg_t xs1, reg_t xs2);
+  virtual reg_t custom1(processor_t*, rocc_insn_t insn, reg_t xs1, reg_t xs2);
+  virtual reg_t custom2(processor_t*, rocc_insn_t insn, reg_t xs1, reg_t xs2);
+  virtual reg_t custom3(processor_t*, rocc_insn_t insn, reg_t xs1, reg_t xs2);
+
+  std::vector<insn_desc_t> get_instructions(const processor_t &proc) override;
+  std::vector<disasm_insn_t*> get_disasms(const processor_t *proc = nullptr) override;
+};
+```
+
+The RoCC opcode constants are defined in `riscv/rocc.h`:
+
+```cpp
+#define ROCC_OPCODE0  0x0b   // custom-0
+#define ROCC_OPCODE1  0x2b   // custom-1
+#define ROCC_OPCODE2  0x5b   // custom-2
+#define ROCC_OPCODE3  0x7b   // custom-3
+#define ROCC_OPCODE_MASK 0x7f
+```
+
+The `rocc_insn_t` struct provides named field access to the instruction encoding:
+
+```cpp
+struct rocc_insn_t
+{
+  unsigned opcode : 7;
+  unsigned rd     : 5;
+  unsigned xs2    : 1;  // source register 2 valid
+  unsigned xs1    : 1;  // source register 1 valid
+  unsigned xd     : 1;  // destination register valid
+  unsigned rs1    : 5;
+  unsigned rs2    : 5;
+  unsigned funct  : 7;
+};
+```
+
+`rocc_t` reads the `xs1` and `xs2` validity flags automatically and passes the register values (or `-1` if the flag is clear) into your `customN()` methods. The return value is written to `rd` when `xd` is set.
+
+<Note>
+The base `rocc_t` implementations of `custom0`–`custom3` call `illegal_instruction()`. Override only the opcodes your extension actually uses.
+</Note>
+
+## Registering an extension
+
+### `REGISTER_EXTENSION` macro
+
+Use the `REGISTER_EXTENSION` macro at file scope to register a factory function under a name string. The macro creates a static object whose constructor calls `register_extension()` at shared-library load time:
+
+```cpp
+REGISTER_EXTENSION(my_ext, []() { return new my_ext_t(); })
+```
+
+```cpp
+// Expands to:
+class register_my_ext {
+ public:
+  register_my_ext() { register_extension("my_ext", []() { return new my_ext_t(); }); }
+};
+static register_my_ext dummy_my_ext;
+```
+
+### `register_extension()` / `find_extension()`
+
+```cpp
+void register_extension(const char* name, std::function<extension_t*()> factory);
+std::function<extension_t*()> find_extension(const char* name);
+```
+
+`register_extension()` stores a factory lambda in a global registry keyed by name. `find_extension()` retrieves it — Spike calls this internally when `--extension=<name>` is used.
+
+## Example: `dummy_rocc`
+
+The `customext/dummy_rocc.cc` file in the Spike source tree is a minimal `rocc_t` subclass with four accumulator registers. It demonstrates the complete pattern:
+
+```cpp
+#include "rocc.h"
+#include "mmu.h"
+#include <cstring>
+
+class dummy_rocc_t : public rocc_t
+{
+ public:
+  const char* name() const { return "dummy_rocc"; }
+
+  reg_t custom0(processor_t* p, rocc_insn_t insn, reg_t xs1, reg_t xs2)
+  {
+    reg_t prev_acc = acc[insn.rs2];
+
+    if (insn.rs2 >= num_acc)
+      illegal_instruction(*p);
+
+    switch (insn.funct)
+    {
+      case 0: acc[insn.rs2] = xs1;                          break; // acc <- xs1
+      case 1:                                               break; // xd  <- acc (return below)
+      case 2: acc[insn.rs2] = p->get_mmu()->load<uint64_t>(xs1); break; // acc <- Mem[xs1]
+      case 3: acc[insn.rs2] += xs1;                         break; // acc += xs1
+      default: illegal_instruction(*p);
+    }
+
+    return prev_acc; // xd <- previous value of acc[rs2]
+  }
+
+  dummy_rocc_t() { memset(acc, 0, sizeof(acc)); }
+
+ private:
+  static const int num_acc = 4;
+  reg_t acc[num_acc];
+};
+
+REGISTER_EXTENSION(dummy_rocc, []() { static dummy_rocc_t ext; return &ext; })
+```
+
+## Example: `cflush` (plain `extension_t`)
+
+`customext/cflush.cc` shows how to use `extension_t` directly when you need finer control over the `insn_desc_t` entries, and demonstrates writing a custom disassembler operand formatter:
+
+```cpp
+#include "insn_macros.h"
+#include "extension.h"
+#include "decode_macros.h"
+
+// Custom operand formatter: prints the rs1 register name
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return xpr_name[insn.rs1()];
+  }
+} xrs1;
+
+static reg_t custom_cflush(processor_t* p, insn_t insn, reg_t pc)
+{
+  require_privilege(PRV_M);
+  return pc + 4;
+}
+
+class cflush_t : public extension_t
+{
+ public:
+  const char* name() const override { return "cflush"; }
+
+  std::vector<insn_desc_t> get_instructions(const processor_t &) override {
+    return {
+      {0xFC000073, 0xFFF07FFF,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush},
+      {0xFC200073, 0xFFF07FFF,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush},
+      {0xFC100073, 0xFFF07FFF,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush,
+       custom_cflush, custom_cflush, custom_cflush, custom_cflush},
+    };
+  }
+
+  std::vector<disasm_insn_t*> get_disasms(const processor_t *) override {
+    return {
+      new disasm_insn_t("cflush.d.l1",   0xFC000073, 0xFFF07FFF, {&xrs1}),
+      new disasm_insn_t("cdiscard.d.l1", 0xFC200073, 0xFFF07FFF, {&xrs1}),
+      new disasm_insn_t("cflush.i.l1",   0xFC100073, 0xFFF07FFF, {&xrs1}),
+    };
+  }
+};
+
+REGISTER_EXTENSION(cflush, []() { static cflush_t ext; return &ext; })
+```
+
+## Building and loading your extension
+
+<Steps>
+
+### Write your extension source file
+
+Create a `.cc` file with your `extension_t` (or `rocc_t`) subclass and a `REGISTER_EXTENSION` call at file scope.
+
+### Compile as a shared library
+
+```bash
+g++ -std=c++17 -fPIC -shared \
+    -I/path/to/riscv-isa-sim \
+    -I/path/to/riscv-isa-sim/riscv \
+    -o my_ext.so my_ext.cc
+```
+
+### Load the library and activate the extension
+
+Pass `--extlib` to load the shared library, then `--extension` to activate the named extension. Both flags may be repeated.
+
+```bash
+spike --extlib=./my_ext.so \
+      --extension=my_ext \
+      pk my_program
+```
+
+</Steps>
+
+<Warning>
+`--extlib` uses `dlopen()` with `RTLD_GLOBAL`, so all symbols in the library become globally visible. Avoid symbol name collisions with Spike's own symbols.
+</Warning>
+
+<Tip>
+You can load multiple extensions in a single Spike invocation:
+
+```bash
+spike --extlib=./ext_a.so --extension=ext_a \
+      --extlib=./ext_b.so --extension=ext_b \
+      pk my_program
+```
+</Tip>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Custom Instructions" icon="code" href="/extensions/custom-instructions">
+    Add instructions to Spike's static ISA at compile time using behavior header files.
+  </Card>
+  <Card title="MMIO Plugin Devices" icon="microchip" href="/extensions/mmio-devices">
+    Attach memory-mapped I/O devices to Spike's address space via shared libraries.
+  </Card>
+</CardGroup>

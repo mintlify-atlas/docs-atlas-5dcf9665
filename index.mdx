@@ -1,97 +1,84 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Spike RISC-V ISA Simulator"
+description: "A functional simulator for RISC-V processors — simulate programs, debug hardware, and prototype custom extensions."
 ---
 
-## Setting up
+Spike is the official RISC-V ISA reference simulator. It implements a functional model of one or more RISC-V harts, supports the full breadth of standard extensions, and provides interactive debugging, GDB integration, and a C++ extension API for custom hardware modeling.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Build and install Spike from source on Linux, macOS, or OpenBSD
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Compile your first RISC-V program and run it under Spike in minutes
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="ISA Configuration" icon="sliders" href="/usage/isa-configuration">
+    Select base ISAs, privilege modes, and extensions via ISA strings
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Interactive Debugging" icon="bug" href="/usage/debugging">
+    Inspect registers, memory, and step through execution interactively
   </Card>
-</Columns>
+  <Card title="Custom Extensions" icon="puzzle-piece" href="/extensions/rocc-extensions">
+    Add custom instructions and accelerators using the RoCC extension API
+  </Card>
+  <Card title="Command Reference" icon="terminal" href="/reference/command-line-options">
+    Full reference for all Spike command-line flags and options
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## What is Spike?
 
-Everything you need to create world-class documentation.
+Spike is named after the golden spike used to celebrate the completion of the US transcontinental railway. It serves as the golden reference model for the RISC-V ecosystem — used for architecture validation, toolchain testing, OS bring-up, and hardware design verification.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Install Spike">
+    Build from source and install to your RISC-V tools prefix:
+    ```bash
+    apt-get install device-tree-compiler libboost-regex-dev libboost-system-dev
+    mkdir build && cd build
+    ../configure --prefix=$RISCV
+    make && make install
+    ```
+  </Step>
+  <Step title="Compile a RISC-V program">
+    Use the RISC-V GNU toolchain to produce an ELF binary:
+    ```bash
+    riscv64-unknown-elf-gcc -o hello hello.c
+    ```
+  </Step>
+  <Step title="Run under Spike">
+    Execute the binary using the proxy kernel:
+    ```bash
+    spike pk hello
+    ```
+  </Step>
+  <Step title="Debug interactively">
+    Launch Spike in interactive debug mode to inspect state:
+    ```bash
+    spike -d pk hello
+    ```
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Key capabilities
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="80+ ISA extensions" icon="layer-group" href="/reference/standard-extensions">
+    Supports RV32/RV64 base ISAs plus vector, hypervisor, cryptography, and dozens of ratified extensions
+  </Card>
+  <Card title="Multi-hart simulation" icon="microchip" href="/usage/running-programs">
+    Simulate up to N RISC-V harts in a single instance with configurable hart IDs
+  </Card>
+  <Card title="GDB / OpenOCD debugging" icon="magnifying-glass" href="/advanced/gdb-openocd">
+    Full source-level debugging via remote bitbang JTAG emulation
+  </Card>
+  <Card title="Cache simulation" icon="database" href="/advanced/cache-simulation">
+    Model L1 instruction, L1 data, and L2 caches with configurable sets, ways, and block sizes
+  </Card>
+  <Card title="MMIO plugin devices" icon="plug" href="/extensions/mmio-devices">
+    Attach custom memory-mapped I/O devices from shared libraries at runtime
+  </Card>
+  <Card title="Execution tracing" icon="list" href="/advanced/logging-tracing">
+    Generate instruction logs and commit logs for post-mortem analysis
+  </Card>
+</CardGroup>

@@ -1,0 +1,265 @@
+---
+title: "ISA Strings"
+description: "Format and usage of RISC-V ISA strings passed to Spike with the --isa flag."
+---
+
+## Overview
+
+An ISA string tells Spike which RISC-V extensions to enable for all simulated harts. Spike parses the string at startup and rejects unknown or malformed values.
+
+Pass an ISA string with the `--isa` flag:
+
+```bash
+spike --isa=rv64imafdc_zicsr_zifencei pk hello
+```
+
+The default value is `rv64imafdc_zicntr_zihpm`.
+
+---
+
+## Format
+
+```
+rv<XLEN><extensions>[_<sub-extension>[_<sub-extension>...]]
+```
+
+ISA strings are **case-insensitive**. `RV64IMAFDC` and `rv64imafdc` are equivalent.
+
+### XLEN
+
+The first part after `rv` specifies the base integer width:
+
+| Value | Width |
+|---|---|
+| `32` | 32-bit |
+| `64` | 64-bit |
+
+### Base ISA
+
+Immediately following the XLEN is the base ISA letter:
+
+| Letter | Base ISA | Notes |
+|---|---|---|
+| `i` | RV32I / RV64I | Standard integer base |
+| `e` | RV32E / RV64E | Embedded base (16 integer registers) |
+| `g` | Shorthand | Expands to `imafd_zicsr_zifencei` |
+
+### Single-letter extensions
+
+Single-letter extensions are listed directly after the base ISA letter, with no separator:
+
+| Letter | Extension | Description |
+|---|---|---|
+| `m` | M | Integer multiply/divide |
+| `a` | A | Atomic instructions |
+| `f` | F | Single-precision floating-point |
+| `d` | D | Double-precision floating-point (requires F) |
+| `q` | Q | Quad-precision floating-point (requires D) |
+| `c` | C | Compressed (16-bit) instructions |
+| `v` | V | Vector extension (64-bit host required) |
+| `h` | H | Hypervisor extension |
+| `b` | B | Bit-manipulation (Zba+Zbb+Zbc+Zbs) |
+| `p` | P | Packed-SIMD (experimental, v0.9.2) |
+| `s` | S | Supervisor mode |
+| `u` | U | User mode |
+
+### Sub-extensions
+
+Sub-extensions use an underscore prefix and can be chained:
+
+```
+rv64imafdc_zicsr_zifencei_zba_zbb
+```
+
+<Note>
+Sub-extension names are case-insensitive. `_Zicsr` and `_zicsr` are the same.
+</Note>
+
+---
+
+## The `g` shorthand
+
+The letter `g` expands to `imafd_zicsr_zifencei`:
+
+| Shorthand | Equivalent |
+|---|---|
+| `rv64g` | `rv64imafd_zicsr_zifencei` |
+| `rv64gc` | `rv64imafd_zicsr_zifencei_c` (adds Compressed) |
+
+---
+
+## Common examples
+
+| ISA string | Description |
+|---|---|
+| `rv64imafdc_zicntr_zihpm` | Default. RV64 with multiply, atomics, F/D FP, compressed, counters. |
+| `rv64gc` | RV64 general-purpose shorthand with compressed. |
+| `rv64imafdc_zicsr_zifencei` | RV64 standard set, explicit Zicsr and Zifencei. |
+| `rv32imac` | RV32 with multiply, atomics, compressed. Common embedded target. |
+| `rv32e` | Minimal RV32 Embedded base ISA (16 integer registers). |
+| `rv64imafdcv` | RV64 with Vector extension (requires 64-bit host). |
+| `rv64imafdc_h` | RV64 with Hypervisor extension. |
+| `rv64imafdc_zba_zbb_zbc_zbs` | RV64 with individual bit-manipulation extensions. |
+| `rv64imafdc_zfh` | RV64 with half-precision floating-point. |
+| `rv64imafdc_zicbom_zicboz` | RV64 with cache-block maintenance extensions. |
+
+---
+
+## Supported extensions
+
+Spike supports a large set of ratified and draft extensions. The table below lists sub-extensions recognized by the ISA parser.
+
+### Zicsr / Zifencei / Zicntr / Zihpm
+
+| Sub-extension | Description |
+|---|---|
+| `zicsr` | CSR instructions (`csrr`, `csrw`, …) |
+| `zifencei` | `fence.i` instruction |
+| `zicntr` | Base counters (`cycle`, `time`, `instret`) |
+| `zihpm` | Hardware performance counters |
+| `zicond` | Conditional-zero instructions |
+
+### Bit-manipulation (B group)
+
+| Sub-extension | Description |
+|---|---|
+| `zba` | Address generation |
+| `zbb` | Basic bit-manipulation |
+| `zbc` | Carry-less multiply |
+| `zbs` | Single-bit instructions |
+
+### Floating-point
+
+| Sub-extension | Description |
+|---|---|
+| `zfh` | Half-precision FP |
+| `zfhmin` | Minimal half-precision FP conversions |
+| `zfa` | Additional FP instructions |
+| `zfbfmin` | BF16 scalar convert |
+| `zfinx` | F-extension on integer registers |
+| `zdinx` | D-extension on integer registers |
+| `zhinx` | H-extension on integer registers |
+| `zhinxmin` | Minimal H on integer registers |
+
+### Compressed (Zc group)
+
+| Sub-extension | Description |
+|---|---|
+| `zca` | Compressed integer instructions |
+| `zcb` | Additional compressed instructions |
+| `zcd` | Compressed double-precision FP |
+| `zcf` | Compressed single-precision FP |
+| `zcmp` | Compressed push/pop |
+| `zcmt` | Compressed table jump |
+| `zclsd` | Compressed load/store pair |
+| `zcmop` | Compressed may-be-ops |
+
+### Scalar cryptography (Zk group)
+
+| Sub-extension | Description |
+|---|---|
+| `zbkb` | Bit-manipulation for cryptography |
+| `zbkc` | Carry-less multiply for cryptography |
+| `zbkx` | Crossbar permutations |
+| `zknd` | NIST AES decryption |
+| `zkne` | NIST AES encryption |
+| `zknh` | NIST SHA hash |
+| `zksed` | ShangMi SM4 cipher |
+| `zksh` | ShangMi SM3 hash |
+| `zkr` | Entropy source |
+
+### Vector (V and Zv group)
+
+| Sub-extension | Description |
+|---|---|
+| `zvfh` | Vector FP half-precision |
+| `zvfhmin` | Vector FP half-precision minimal |
+| `zvfbfmin` | Vector BF16 convert |
+| `zvfbfwma` | Vector BF16 widening multiply-add |
+| `zvbb` | Vector bit-manipulation |
+| `zvbc` | Vector carry-less multiply |
+| `zvkg` | Vector GCM/GMAC |
+| `zvkned` | Vector AES block cipher |
+| `zvknha` | Vector SHA-256 |
+| `zvknhb` | Vector SHA-512 |
+| `zvksed` | Vector SM4 block cipher |
+| `zvksh` | Vector SM3 hash |
+| `zvzip` | Vector zip/unzip |
+
+### Atomics (Za group)
+
+| Sub-extension | Description |
+|---|---|
+| `zaamo` | Atomic memory operations |
+| `zalrsc` | Load-reserved / store-conditional |
+| `zacas` | Compare-and-swap |
+| `zabha` | Byte/halfword atomics |
+| `zawrs` | Wait-on-reservation-set |
+| `zalasr` | Load-acquire / store-release |
+
+### Cache-block maintenance
+
+| Sub-extension | Description |
+|---|---|
+| `zicbom` | Cache-block management (clean, flush, inval) |
+| `zicboz` | Cache-block zero |
+
+### Supervisor / machine extensions
+
+| Sub-extension | Description |
+|---|---|
+| `smepmp` | Enhanced PMP |
+| `smstateen` | State-enable extension |
+| `smrnmi` | Resumable NMI |
+| `sscofpmf` | Count overflow / filtering |
+| `sstc` | Supervisor timer comparison |
+| `svnapot` | Naturally aligned power-of-two pages |
+| `svpbmt` | Page-based memory types |
+| `svinval` | Fine-grained address-translation cache invalidation |
+| `svadu` | Hardware A/D bit updates |
+| `svade` | A/D bit exception on access |
+| `smdbltrp` | Machine double trap |
+| `ssdbltrp` | Supervisor double trap |
+| `ssqosid` | QoS identifiers |
+| `smcsrind` | Machine CSR indirect access |
+| `sscsrind` | Supervisor CSR indirect access |
+| `smcdeleg` | Counter delegation |
+| `ssccfg` | Counter configuration |
+| `smcntrpmf` | Counter privilege mode filter |
+| `smmpm` | Machine pointer masking |
+| `smnpm` | Machine nested pointer masking |
+| `ssnpm` | Supervisor nested pointer masking |
+| `smaia` | Advanced interrupt architecture (machine) |
+| `ssaia` | Advanced interrupt architecture (supervisor) |
+
+### Security
+
+| Sub-extension | Description |
+|---|---|
+| `zicfilp` | Control-flow integrity (landing pads) |
+| `zicfiss` | Control-flow integrity (shadow stack) |
+
+### Miscellaneous
+
+| Sub-extension | Description |
+|---|---|
+| `zmmul` | Integer multiply (no divide) |
+| `zilsd` | Load/store pair |
+| `zimop` | May-be-ops |
+| `zvabd` | Vector absolute difference |
+| `zicclsm` | Misaligned loads/stores |
+| `ziccid` | Cache-block identifier |
+| `zibi` | Instruction-based barriers |
+
+---
+
+## Usage notes
+
+- Specifying `g` and also individual `i`, `m`, `a`, `f`, or `d` letters is valid; Spike deduplicates them.
+- Extensions with dependencies (e.g., `d` requires `f`) will cause a parse error if the prerequisite is missing.
+- Unrecognized extension names cause Spike to exit with an error at startup.
+- The `--priv` flag controls which privilege modes are active independently of the ISA string.
+
+<Warning>
+The Vector extension (`v`) requires a 64-bit host system. Attempting to use it on a 32-bit host produces a build-time or runtime error.
+</Warning>

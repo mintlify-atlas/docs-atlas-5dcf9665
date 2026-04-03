@@ -1,0 +1,105 @@
+---
+title: "Base ISAs"
+description: "The four RISC-V base instruction set architectures supported by Spike: RV32I, RV64I, RV32E, and RV64E."
+---
+
+Spike implements all four RISC-V base ISAs. Every simulation starts by selecting one of these as the foundation, then layering standard extensions on top.
+
+## Supported base ISAs
+
+| ISA    | XLEN | General-purpose registers | Version |
+|--------|------|--------------------------|---------|
+| RV32I  | 32   | 32                        | v2.1    |
+| RV64I  | 64   | 32                        | v2.1    |
+| RV32E  | 32   | 16                        | v1.9    |
+| RV64E  | 64   | 16                        | v1.9    |
+
+**RV32I** is the 32-bit integer base ISA. It provides 32 general-purpose integer registers (x0–x31) and is the most widely used base for embedded and application processors.
+
+**RV64I** is the 64-bit integer base ISA. It extends RV32I with 64-bit address space and arithmetic, while keeping the same 32 general-purpose registers.
+
+**RV32E** is a reduced 32-bit base designed for microcontrollers and deeply embedded systems. It provides only 16 general-purpose registers (x0–x15), reducing hardware area.
+
+**RV64E** is the 64-bit embedded variant, combining 64-bit addressing with the 16-register constraint of RV32E.
+
+<Note>
+RV32E and RV64E are at version v1.9, reflecting their status as ratified but less commonly deployed base ISAs compared to RV32I/RV64I at v2.1.
+</Note>
+
+## Selecting a base ISA
+
+Use the `--isa` flag to specify the base ISA when invoking Spike:
+
+```bash
+spike --isa=rv32i pk program
+spike --isa=rv64i pk program
+spike --isa=rv32e pk program
+spike --isa=rv64e pk program
+```
+
+Extensions are appended to the base ISA string:
+
+```bash
+spike --isa=rv64imafd pk program
+spike --isa=rv32imac pk program
+```
+
+### The `g` shorthand
+
+The letter `g` is a shorthand for the standard general-purpose extension combination:
+
+```
+g = imafd_zicsr_zifencei
+```
+
+This is equivalent to specifying integer, multiply/divide, atomics, single- and double-precision float, plus the CSR and fence-i system extensions:
+
+```bash
+spike --isa=rv64gc pk program   # rv64imafd_zicsr_zifencei + compressed
+spike --isa=rv32gc pk program
+```
+
+## Privilege modes
+
+Spike supports all three RISC-V privilege levels as specified in the privileged architecture v1.11.
+
+| Mode       | Letter | Description                              |
+|------------|--------|------------------------------------------|
+| Machine    | M      | Highest privilege; always present        |
+| Supervisor | S      | Operating system mode                    |
+| User       | U      | Application mode; lowest privilege       |
+
+Use the `--priv` flag to configure which privilege modes are active:
+
+```bash
+spike --priv=m    pk program    # Machine mode only
+spike --priv=mu   pk program    # Machine + User
+spike --priv=msu  pk program    # Machine + Supervisor + User (default)
+```
+
+## Memory ordering
+
+Spike conforms to both RISC-V memory ordering models:
+
+| Model | Description |
+|-------|-------------|
+| RVWMO | RISC-V Weak Memory Ordering — the standard RISC-V memory model |
+| RVTSO | RISC-V Total Store Ordering — a stricter model compatible with x86 |
+
+<Note>
+Spike is sequentially consistent, meaning it satisfies both RVWMO and RVTSO requirements. Memory ordering bugs that depend on relaxed ordering behavior may not be observable in Spike simulation.
+</Note>
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Standard Extensions" href="/reference/standard-extensions" icon="puzzle-piece">
+    Integer, float, compressed, system, and privileged extensions.
+  </Card>
+  <Card title="Vector Extensions" href="/reference/vector-extensions" icon="list">
+    The V extension and all vector sub-extensions.
+  </Card>
+  <Card title="Cryptography Extensions" href="/reference/cryptography-extensions" icon="lock">
+    Scalar and vector cryptography extension groups.
+  </Card>
+</CardGroup>

@@ -1,0 +1,168 @@
+---
+title: "Memory Configuration"
+description: "Configure Spike's memory regions, addresses, sizes, kernel loading, and device tree generation."
+---
+
+Spike simulates physical memory as one or more contiguous regions. By default, it provides 2048 MiB of memory starting at `DRAM_BASE` (0x80000000), which matches the standard RISC-V memory map.
+
+## Simple memory sizing
+
+Pass a size in MiB with `-m<n>` to allocate a single region at the default DRAM base:
+
+```bash
+# 256 MiB at 0x80000000
+spike -m256 pk hello
+
+# 4 GiB at 0x80000000
+spike -m4096 pk hello
+```
+
+This is equivalent to `-m0x80000000:0x<size-in-bytes>` but more convenient for common cases.
+
+## Custom memory regions
+
+For precise control over base addresses and sizes, use the `base:size` form. Addresses and sizes are parsed as hex when prefixed with `0x`, otherwise as decimal:
+
+```bash
+# Single region: 256 MiB at 0x80000000
+spike -m0x80000000:0x10000000 pk hello
+
+# Single region: 128 KiB at 0x10000 (for small bare-metal programs)
+spike -m0x10000:0x20000 bare-metal.elf
+```
+
+## Multiple memory regions
+
+Specify multiple regions as a comma-separated list:
+
+```bash
+# Two regions: 128 KiB at 0x10000 and 256 MiB at 0x80000000
+spike -m0x10000:0x20000,0x80000000:0x10000000 program.elf
+```
+
+This is useful for modelling systems with non-contiguous memory maps, such as tightly coupled memory (TCM) alongside main DRAM.
+
+<Note>
+  All region bases and sizes must be aligned to a 4 KiB page boundary. Spike will automatically align regions that are not page-aligned and prints a warning with the adjusted range.
+</Note>
+
+<Warning>
+  The `--dtb-discovery` option is incompatible with custom `-m` memory layouts. Use only one or the other.
+</Warning>
+
+## DRAM_BASE
+
+The standard RISC-V DRAM base address is `0x80000000`. This is where `pk`, BBL, and Linux expect to find themselves loaded. Bare-metal programs linked at a different address must use a matching `-m` region and `--pc` override:
+
+```bash
+# Program linked at 0x20000000
+spike -m0x20000000:0x10000000 --pc=0x20000000 firmware.elf
+```
+
+## Overlap merging
+
+When multiple specified regions overlap, Spike automatically merges them into the smallest enclosing region. This is handled silently; inspect `--dump-dts` output to verify the final memory map.
+
+## Kernel loading
+
+When booting a Linux kernel, Spike loads the flat image into memory at a fixed offset:
+
+| Base ISA | Kernel offset from DRAM_BASE |
+|----------|------------------------------|
+| RV64 | 2 MiB (0x200000) |
+| RV32 | 4 MiB (0x400000) |
+
+```bash
+spike --kernel=Image --initrd=rootfs.cpio --bootargs="console=ttyS0" bbl
+```
+
+| Option | Description |
+|--------|-------------|
+| `--kernel=<path>` | Flat kernel image (e.g. Linux `Image`) |
+| `--initrd=<path>` | Initial ramdisk; placed near the top of the first memory region |
+| `--bootargs=<args>` | Kernel command-line string |
+
+<Tip>
+  Ensure the memory region is large enough to hold both the kernel and the initrd with space to spare. For a typical Linux system, `-m512` or larger is recommended.
+</Tip>
+
+## Device tree
+
+Spike auto-generates a Flattened Device Tree (FDT / DTB) and writes it into memory at startup. Several options control this behavior.
+
+### Inspect the generated device tree
+
+```bash
+spike --dump-dts pk hello
+```
+
+This prints the DTS source to stdout and exits without running the simulation. Useful for verifying the memory map, CLINT base address, and hart count.
+
+### Supply a custom DTB
+
+```bash
+spike --dtb=my-platform.dtb program.elf
+```
+
+Spike loads the provided binary DTB into memory instead of auto-generating one. The DTB must accurately describe the simulated memory layout and devices.
+
+### Disable DTB
+
+```bash
+spike --disable-dtb program.elf
+```
+
+Spike will not write any device tree into memory. Use this for bare-metal programs that do not use the device tree.
+
+### Device tree discovery
+
+```bash
+spike --dtb=platform.dtb --dtb-discovery program.elf
+```
+
+`--dtb-discovery` enables direct device discovery from the DTB blob. It requires `--dtb` and is incompatible with `-m` and `--device`.
+
+## Real-time CLINT
+
+By default, the CLINT `mtime` counter advances in simulated time (proportional to instructions). Use `--real-time-clint` to make it advance at wall-clock speed:
+
+```bash
+spike --real-time-clint pk timing-sensitive-program
+```
+
+This is useful for testing software that polls `mtime` for real elapsed time, but it makes simulation results non-deterministic.
+
+## Endianness
+
+Memory byte order defaults to little-endian. See [ISA Configuration](/usage/isa-configuration) for the `--big-endian` option.
+
+## Examples
+
+```bash
+# Default: 2 GiB at 0x80000000
+spike pk hello
+
+# Small bare-metal image at a custom address
+spike -m0x80000000:0x200000 --pc=0x80000000 firmware.elf
+
+# Two-region memory map: TCM + DRAM
+spike -m0x00100000:0x00010000,0x80000000:0x08000000 program.elf
+
+# Boot Linux with 1 GiB
+spike -m1024 --kernel=Image --initrd=rootfs.cpio bbl
+
+# Print the auto-generated device tree and exit
+spike --dump-dts -m512 -p2 pk hello
+
+# Use a custom DTB and disable auto-generation
+spike --dtb=board.dtb program.elf
+```
+
+<CardGroup cols={2}>
+  <Card title="Running programs" icon="play" href="/usage/running-programs">
+    Basic invocation and multi-hart simulation
+  </Card>
+  <Card title="ISA configuration" icon="sliders" href="/usage/isa-configuration">
+    Select base ISAs, privilege modes, and extensions
+  </Card>
+</CardGroup>

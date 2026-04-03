@@ -1,80 +1,115 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick start"
+description: "Compile a C program for RISC-V and simulate it under Spike in under five minutes."
 ---
 
-## Get started in three steps
+This guide walks you through writing a simple C program, compiling it for RISC-V, and running it under Spike using the proxy kernel. You will also take a first look at interactive debug mode.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, make sure you have the following installed:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- **Spike** — see [Installation](/installation)
+- **riscv-gnu-toolchain** — provides `riscv64-unknown-elf-gcc` and related tools
+- **riscv-pk** — the RISC-V proxy kernel (`pk`), used to handle syscalls on behalf of bare-metal binaries
 
-### Step 2: Deploy your changes
+<Note>
+  The proxy kernel (`pk`) acts as a minimal operating environment. It intercepts system calls from your program (such as `write`) and forwards them to the host OS, so you can run standard C programs without a full OS image.
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Step 1: Write a C program
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+Create a file named `hello.c`:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```c hello.c
+#include <stdio.h>
 
-### Step 3: Go live
+int main() {
+    printf("Hello, RISC-V!\n");
+    return 0;
+}
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Step 2: Compile for RISC-V
+
+Use the RISC-V cross-compiler to produce a 64-bit ELF binary:
+
+```bash
+riscv64-unknown-elf-gcc -o hello hello.c
+```
+
+This produces a `hello` ELF binary targeting the RV64GC ISA by default.
+
+## Step 3: Run under Spike
+
+Simulate the binary using Spike with the proxy kernel:
+
+```bash
+spike pk hello
+```
+
+Expected output:
+
+```
+Hello, RISC-V!
+```
+
+Spike loads `hello`, hands system calls to `pk`, and exits when `main` returns.
+
+## Step 4: Explore interactive debug mode
+
+Launch Spike with the `-d` flag to enter interactive debug mode. Execution pauses before the first instruction:
+
+```bash
+spike -d pk hello
+```
+
+You will see a prompt like:
+
+```
+(spike) 
+```
+
+From here you can inspect and control execution:
+
+| Command | Description |
+|---|---|
+| `reg 0 a0` | Print the value of register `a0` on hart 0 |
+| `mem 2020` | Print the contents of physical address `0x2020` |
+| `r` | Continue execution until the program exits or you interrupt it |
+| `q` | Quit the simulator |
+
+Example session:
+
+```
+(spike) reg 0 a0
+0x0000000000000000
+(spike) mem 2020
+0x00
+(spike) r
+Hello, RISC-V!
+(spike) q
+```
+
+<Tip>
+  Press **Enter** at the prompt to step one instruction at a time. Press **Ctrl-C** at any point during normal execution to drop into debug mode without restarting.
+</Tip>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+You have compiled and run your first RISC-V program under Spike. From here you can:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Interactive debugging" icon="bug" href="/usage/debugging">
+    Learn the full set of debug commands: breakpoints, watchpoints, register and memory inspection.
+  </Card>
+  <Card title="ISA configuration" icon="sliders" href="/usage/isa-configuration">
+    Select a specific ISA string to target different base ISAs or extensions.
+  </Card>
+  <Card title="Running programs" icon="play" href="/usage/running-programs">
+    Simulate multi-hart workloads, configure memory layout, and use HTIF.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/command-line-options">
+    Full reference for all Spike command-line flags and options.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

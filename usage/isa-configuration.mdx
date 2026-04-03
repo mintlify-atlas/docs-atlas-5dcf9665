@@ -1,0 +1,165 @@
+---
+title: "ISA Configuration"
+description: "Configure the RISC-V ISA string, privilege modes, endianness, and physical memory protection for Spike simulations."
+---
+
+Spike's ISA configuration controls which instructions and privilege features are available to simulated software. The primary control is the `--isa` flag.
+
+## ISA strings
+
+A RISC-V ISA string encodes the base ISA width and the set of enabled extensions. The general form is:
+
+```
+rv<width><base-extensions>[_<extension>...]
+```
+
+| Component | Meaning |
+|-----------|---------|
+| `rv32` / `rv64` | 32-bit or 64-bit base integer ISA |
+| `i` | Base integer instructions (RV32I / RV64I) |
+| `e` | Embedded base integer (RV32E / RV64E) |
+| `m` | Integer multiplication and division |
+| `a` | Atomic instructions |
+| `f` | Single-precision floating point |
+| `d` | Double-precision floating point (requires F) |
+| `c` | Compressed (16-bit) instructions |
+| `v` | Vector extension (RV64 host required) |
+| `g` | Shorthand for `imafd_zicsr_zifencei` |
+| `_zicsr` | CSR instructions |
+| `_zifencei` | Instruction-fetch fence |
+
+The default ISA string is:
+
+```
+rv64imafdc_zicntr_zihpm
+```
+
+## Setting the ISA
+
+Pass an ISA string with `--isa`:
+
+```bash
+spike --isa=rv64gc pk hello
+spike --isa=rv32imac pk hello32
+spike --isa=rv64imafdcv pk vector-workload
+```
+
+<Note>
+  `g` is shorthand for `imafd_zicsr_zifencei`. `rv64gc` therefore means `rv64imafd_zicsr_zifencei_c`.
+</Note>
+
+## Privilege modes
+
+The `--priv` option selects which privilege levels are active. Software running at a given level cannot use features of a higher level.
+
+| Value | Active privilege modes |
+|-------|----------------------|
+| `m` | Machine only |
+| `mu` | Machine + User |
+| `msu` | Machine + Supervisor + User (default) |
+
+```bash
+# Machine mode only — minimal firmware environment
+spike --priv=m firmware.elf
+
+# Machine + User — no supervisor, no OS
+spike --priv=mu --isa=rv64imac program.elf
+
+# Full M/S/U — Linux and other OSes (default)
+spike --priv=msu pk hello
+```
+
+<Warning>
+  Running a Linux kernel requires `msu`. Using `m` or `mu` will prevent supervisor-mode software from booting.
+</Warning>
+
+## Endianness
+
+Spike defaults to little-endian memory. Use `--big-endian` to simulate a big-endian system:
+
+```bash
+spike --big-endian --isa=rv64imac program.elf
+```
+
+Big-endian support requires that the target program was compiled for a big-endian RISC-V target.
+
+## Physical Memory Protection (PMP)
+
+PMP restricts physical memory access from lower privilege modes. Two options control PMP simulation:
+
+### Number of PMP regions
+
+```bash
+# Use 8 PMP regions instead of the default 16
+spike --pmpregions=8 pk hello
+
+# Disable PMP entirely
+spike --pmpregions=0 pk hello
+```
+
+The RISC-V specification allows 0, 16, or 64 PMP regions. Spike defaults to 16.
+
+### PMP granularity
+
+PMP granularity controls the minimum protected region size. The value must be a power of 2 and at least 4:
+
+```bash
+# 4 KiB PMP granularity (matches page size)
+spike --pmpgranularity=4096 pk hello
+```
+
+The default granularity is 4 bytes. Larger values reduce simulation overhead for workloads that do not rely on fine-grained PMP enforcement.
+
+## Common ISA configurations
+
+```bash
+# Minimal 64-bit — integer only, no extensions
+spike --isa=rv64i --priv=m firmware.elf
+
+# Standard 64-bit application processor (default)
+spike --isa=rv64imafdc_zicntr_zihpm pk hello
+
+# 32-bit embedded target, machine mode only
+spike --isa=rv32imc --priv=m embedded.elf
+
+# 64-bit with vector extension
+spike --isa=rv64gcv pk vector-program
+
+# 64-bit with cryptography scalar extensions
+spike --isa=rv64gc_zkn_zks pk crypto-test
+
+# Hypervisor extension enabled
+spike --isa=rv64gcv_h pk hypervisor-payload
+
+# Big-endian minimal configuration
+spike --big-endian --isa=rv64imac --priv=msu program.elf
+```
+
+<Tip>
+  When targeting a specific hardware implementation, match Spike's `--isa` and `--priv` to the hardware's reported `misa` CSR value and implemented privilege levels to get the most accurate simulation.
+</Tip>
+
+## Supported extensions reference
+
+Spike supports over 80 ratified and draft extensions. A partial list of commonly used extensions beyond the base `g` shorthand:
+
+| Extension | Description |
+|-----------|-------------|
+| `v` | Vector (V1.0) |
+| `h` | Hypervisor |
+| `b` | Bit manipulation |
+| `_zba`, `_zbb`, `_zbc`, `_zbs` | Bitmanip sub-extensions |
+| `_zfh`, `_zfhmin` | Half-precision floating point |
+| `_zicbom`, `_zicboz` | Cache-block maintenance |
+| `_svnapot`, `_svpbmt` | Supervisor virtual memory |
+| `_smepmp` | Enhanced PMP |
+| `_zkn`, `_zks` | Scalar cryptography |
+
+<CardGroup cols={2}>
+  <Card title="Running programs" icon="play" href="/usage/running-programs">
+    Basic invocation and multi-hart simulation
+  </Card>
+  <Card title="Memory configuration" icon="memory" href="/usage/memory-configuration">
+    Configure memory regions and device tree
+  </Card>
+</CardGroup>

@@ -1,0 +1,136 @@
+---
+title: "Logging and Tracing"
+description: "Capture instruction traces, commit logs, and PC histograms to debug, verify, and profile RISC-V programs running on Spike."
+---
+
+Spike provides several logging and tracing facilities that record what the simulator is executing. These are useful for debugging incorrect behavior, verifying that instructions commit the expected results, and profiling which code paths are executed most frequently.
+
+## Execution log
+
+The `-l` flag enables an instruction-level execution trace. Each executed instruction is printed with its core ID, privilege level, program counter, and encoded instruction bits:
+
+```bash
+spike -l pk hello
+```
+
+Example output:
+
+```text
+core   0: 0x0000000080000000 (0x00000297) auipc   t0, 0x0
+core   0: 0x0000000080000004 (0x02028593) addi    a1, t0, 32
+core   0: 0x0000000080000008 (0xf1402573) csrr    a0, mhartid
+```
+
+Each line has the form:
+
+```
+core <id>: <privilege> <pc> (<encoding>) <disassembly>
+```
+
+<Note>
+The execution log can be very large for long-running programs. Use `--instructions=<n>` to limit the number of instructions executed, or redirect stderr to a file.
+</Note>
+
+### Redirecting log output
+
+By default the log is written to stderr. Use `--log=<filename>` to write it to a file instead:
+
+```bash
+spike -l --log=trace.txt pk hello
+```
+
+## Commit log
+
+The `--log-commits` flag extends the execution log with the results of each instruction: which registers were written and which memory locations were accessed. This is the most detailed trace Spike produces.
+
+```bash
+spike -l --log-commits pk hello
+```
+
+Example commit log output:
+
+```text
+core   0: 3 0x0000000080000000 (0x00000297) x5  0x0000000080000000
+core   0: 3 0x0000000080000004 (0x02028593) x11 0x0000000080000020
+core   0: 3 0x0000000080001234 (0xfe843783) x15 0xffffffffffffffff mem 0x000000008000ff00
+```
+
+The fields after the disassembly are the register write results (`x<n> <value>`, `f<n> <value>`, `c<n>_<csr> <value>`) and memory accesses (`mem <addr>` for reads, `mem <addr> <value>` for writes).
+
+<Note>
+`--log-commits` and `-l` are independent flags. Use them together to get both the instruction trace and the commit results in the same output stream. `--log-commits` alone enables the commit tracking logic but produces no per-instruction disassembly output.
+</Note>
+
+### Log file path
+
+`--log=<filename>` applies to both `-l` and `--log-commits` output. Both are written to the same file or stream.
+
+## PC histogram
+
+The `-g` flag enables a program counter execution frequency histogram. Spike counts how many times each PC is executed. The histogram is printed to stdout when the simulation ends:
+
+```bash
+spike -g pk hello
+```
+
+Example output (truncated):
+
+```text
+0x0000000080000000 1
+0x0000000080000004 1
+0x0000000080001000 42317
+0x0000000080001004 42317
+```
+
+This identifies hot loops and frequently executed paths without requiring external profiling tools.
+
+## Stopping after N instructions
+
+The `--instructions=<n>` flag causes Spike to stop cleanly after exactly N instructions have been executed across all harts:
+
+```bash
+spike --instructions=1000000 pk hello
+```
+
+This is useful in combination with logging to capture only a bounded trace, or to measure a fixed-size workload.
+
+<Note>
+The instruction count is across all simulated harts combined. In a multi-hart simulation (`-p<n>`), the count includes instructions from all cores.
+</Note>
+
+## Cache miss logging
+
+Pass `--log-cache-miss` alongside cache configuration options to log every cache miss to stderr. See [Cache Simulation](/advanced/cache-simulation) for details.
+
+## Parsing logs with spike-log-parser
+
+The `spike_main/spike-log-parser.cc` utility reads execution log lines from stdin and outputs the canonical disassembly name for each instruction. It is useful for post-processing traces into instruction mixes or for stripping the log down to a sequence of opcode names.
+
+```bash
+spike -l pk hello 2>&1 | spike-log-parser
+```
+
+The parser recognizes lines matching the pattern:
+
+```
+core  <id>: <pc> (0x<encoding>) ...
+```
+
+and outputs one instruction name per matched line.
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Debugging incorrect behavior" icon="bug">
+    Use `-l --log-commits` to trace the exact sequence of register and memory writes leading up to a fault or wrong result.
+  </Card>
+  <Card title="Verifying ISA compliance" icon="check">
+    Compare commit log output against a reference model to confirm that each instruction produces the correct architectural state.
+  </Card>
+  <Card title="Profiling hot paths" icon="chart-bar">
+    Use `-g` to identify which PCs account for the most execution time, then focus optimization on those code regions.
+  </Card>
+  <Card title="Bounded trace capture" icon="scissors">
+    Combine `--instructions=<n>` with `-l` to capture a reproducible fixed-length trace from a long-running workload.
+  </Card>
+</CardGroup>

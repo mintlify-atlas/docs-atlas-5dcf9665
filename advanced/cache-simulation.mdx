@@ -1,0 +1,117 @@
+---
+title: "Cache Simulation"
+description: "Model L1 instruction, L1 data, and L2 cache behavior to analyze memory access patterns in your RISC-V programs."
+---
+
+Spike includes a configurable cache simulator that models L1 instruction cache (I$), L1 data cache (D$), and a unified L2 cache. The simulator intercepts all memory accesses via the `memtracer_t` interface and tracks hits, misses, and writebacks. Statistics are printed to stdout at the end of simulation.
+
+## Option syntax
+
+Each cache is configured with a colon-separated triple:
+
+```
+<S>:<W>:<B>
+```
+
+| Field | Meaning | Constraint |
+|-------|---------|-----------|
+| `S` | Number of sets | Must be a power of 2 |
+| `W` | Number of ways (associativity) | Any positive integer |
+| `B` | Block size in bytes | Must be a power of 2, minimum 8 |
+
+The three cache options are:
+
+| Option | Cache |
+|--------|-------|
+| `--ic=<S>:<W>:<B>` | L1 instruction cache |
+| `--dc=<S>:<W>:<B>` | L1 data cache |
+| `--l2=<S>:<W>:<B>` | Unified L2 cache |
+
+### Calculating cache capacity
+
+Cache size in bytes = S × W × B
+
+For example, `--ic=64:4:64` configures:
+- 64 sets × 4 ways × 64-byte blocks = **16 KiB** L1 instruction cache
+
+## Hierarchical caching
+
+When both an L1 cache and `--l2` are specified, L1 misses are forwarded to the L2 cache. Specifically:
+
+- If `--ic` and `--l2` are both set, I$ misses go to L2
+- If `--dc` and `--l2` are both set, D$ misses go to L2
+- Dirty evictions from L1 also write back through L2
+
+This is wired automatically in `spike_main/spike.cc`: the L2 is registered as the miss handler for each L1 cache that is present.
+
+```cpp
+if (ic && l2) ic->set_miss_handler(&*l2);
+if (dc && l2) dc->set_miss_handler(&*l2);
+```
+
+## Logging cache misses
+
+Add `--log-cache-miss` to print every cache miss to stderr as it occurs:
+
+```text
+I$ read miss 0x0000000080001234
+D$ write miss 0x0000000080004000
+```
+
+Each line shows the cache name, the access type (`read` or `write`), and the faulting address.
+
+<Note>
+`--log-cache-miss` applies to all configured caches (I$, D$, and L2). On workloads with high miss rates, this can produce very large output.
+</Note>
+
+## Cache block size for CMO operations
+
+The `--blocksz` option sets the cache block size used for Cache Management Operations (CMO, Zicbom/Zicboz extensions). This is independent of the simulated cache configuration above.
+
+```
+--blocksz=<size>
+```
+
+- Must be a power of 2
+- Valid range: 16 to PGSIZE (typically 4096)
+- Default: 64
+
+## Statistics output
+
+At the end of simulation, each configured cache prints a summary to stdout:
+
+```text
+I$ Bytes Read:            8388608
+I$ Bytes Written:         0
+I$ Read Accesses:         131072
+I$ Write Accesses:        0
+I$ Read Misses:           2048
+I$ Write Misses:          0
+I$ Writebacks:            0
+I$ Miss Rate:             1.563%
+```
+
+The same block is printed for D$ and L2 if they are configured.
+
+## Example
+
+Simulate a program with a two-level cache hierarchy:
+
+```bash
+spike --ic=64:4:64 --dc=64:4:64 --l2=1024:8:64 pk hello
+```
+
+This configures:
+- 16 KiB, 4-way L1 I$ (64 sets × 4 ways × 64 B)
+- 16 KiB, 4-way L1 D$ (64 sets × 4 ways × 64 B)
+- 512 KiB, 8-way unified L2 (1024 sets × 8 ways × 64 B)
+
+To also log every miss during the run:
+
+```bash
+spike --ic=64:4:64 --dc=64:4:64 --l2=1024:8:64 --log-cache-miss pk hello
+```
+
+<Warning>
+`S` and `B` must both be powers of 2. Spike will print an error and exit if either constraint is violated. `W` has no power-of-2 requirement but large fully-associative caches (sets=1, ways&gt;4) use a different implementation (`fa_cache_sim_t`) with a hash-map tag store.
+</Warning>

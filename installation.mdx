@@ -1,0 +1,177 @@
+---
+title: "Installation"
+description: "Build and install Spike from source on Linux, macOS, or OpenBSD."
+---
+
+Spike is distributed as source code. You build it with a standard configure/make toolchain. The instructions below cover Linux and macOS (which share the same steps) and OpenBSD, which requires a small amount of additional setup.
+
+## Prerequisites
+
+Spike requires the following libraries before you configure and build:
+
+| Package | Purpose |
+|---|---|
+| `device-tree-compiler` | Compiles device tree sources used to describe the simulated machine |
+| `libboost-regex-dev` | Regular expression support used in ISA string parsing |
+| `libboost-system-dev` | Boost system utilities |
+
+You also need the `RISCV` environment variable set to the path where you want Spike installed. All Spike binaries, libraries, and headers will be placed under this prefix.
+
+```bash
+export RISCV=/path/to/riscv-tools
+```
+
+<Tip>
+  Add the `export` line to your shell profile (`.bashrc`, `.zshrc`, etc.) so the variable is available in every session.
+</Tip>
+
+## Build on Linux or macOS
+
+<Steps>
+  <Step title="Install dependencies">
+    On Debian/Ubuntu:
+
+    ```bash
+    apt-get install device-tree-compiler libboost-regex-dev libboost-system-dev
+    ```
+
+    On systems using `yum`:
+
+    ```bash
+    yum install dtc boost-devel
+    ```
+  </Step>
+  <Step title="Create a build directory">
+    Spike uses an out-of-source build. Create a `build` directory inside the repository root:
+
+    ```bash
+    mkdir build
+    cd build
+    ```
+  </Step>
+  <Step title="Configure">
+    Run `configure` from the build directory, pointing the install prefix at your `$RISCV` path:
+
+    ```bash
+    ../configure --prefix=$RISCV
+    ```
+
+    See [configure flags](#configure-flags) below for additional options.
+  </Step>
+  <Step title="Build">
+    ```bash
+    make
+    ```
+  </Step>
+  <Step title="Install">
+    ```bash
+    [sudo] make install
+    ```
+
+    Use `sudo` if the `$RISCV` prefix is owned by root.
+  </Step>
+</Steps>
+
+## Build on OpenBSD
+
+OpenBSD ships with a different default shell and uses `gmake` instead of `make`. Follow these steps:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    pkg_add bash gmake dtc
+    ```
+  </Step>
+  <Step title="Switch to bash">
+    The configure script requires bash:
+
+    ```bash
+    exec bash
+    ```
+  </Step>
+  <Step title="Set compilers">
+    OpenBSD's default `cc` and `c++` are clang-based. Export them explicitly so the build system picks them up:
+
+    ```bash
+    export CC=cc
+    export CXX=c++
+    ```
+  </Step>
+  <Step title="Create a build directory">
+    ```bash
+    mkdir build
+    cd build
+    ```
+  </Step>
+  <Step title="Configure">
+    ```bash
+    ../configure --prefix=$RISCV
+    ```
+  </Step>
+  <Step title="Build">
+    Use `gmake` instead of `make`:
+
+    ```bash
+    gmake
+    ```
+  </Step>
+  <Step title="Install">
+    ```bash
+    [doas] make install
+    ```
+
+    Use `doas` (OpenBSD's `sudo` equivalent) if the prefix is system-owned.
+  </Step>
+</Steps>
+
+## Configure flags
+
+The `configure` script accepts the following flags:
+
+| Flag | Description |
+|---|---|
+| `--prefix=PATH` | Install prefix. Set to `$RISCV` by convention. |
+| `--with-boost=PATH` | Path to a non-default Boost installation. |
+| `--with-boost-regex=LIB` | Override the Boost.Regex library name. |
+| `--enable-dual-endian` | Build with support for big-endian target simulation. |
+
+Run `../configure --help` for the full list.
+
+## What gets installed
+
+After `make install`, the following are placed under `$RISCV`:
+
+| Path | Contents |
+|---|---|
+| `$RISCV/bin/spike` | The Spike simulator binary |
+| `$RISCV/lib/libriscv.so` | Shared library for the RISC-V simulation core |
+| `$RISCV/lib/libfesvr.so` | Shared library for the front-end server (HTIF, ELF loader) |
+| `$RISCV/lib/libdisasm.so` | Shared library for the RISC-V disassembler |
+| `$RISCV/lib/pkgconfig/` | pkg-config files (`riscv-riscv.pc`, `riscv-fesvr.pc`, `riscv-disasm.pc`) |
+| `$RISCV/include/` | C++ headers for the simulation core, fesvr, and disassembler |
+
+<Warning>
+  The C++ headers and libraries are provided for convenience. The C++ interface is **not** a stable public API and may change without a major version bump. See the [introduction](/introduction#versioning-policy) for details.
+</Warning>
+
+## Verify the installation
+
+After installation, confirm Spike is on your `PATH`:
+
+```bash
+spike --help
+```
+
+You should see output starting with:
+
+```
+Spike RISC-V ISA Simulator 1.1.1-dev
+
+usage: spike [host options] <target program> [target options]
+```
+
+If the command is not found, ensure `$RISCV/bin` is in your `PATH`:
+
+```bash
+export PATH=$RISCV/bin:$PATH
+```

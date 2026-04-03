@@ -1,0 +1,171 @@
+---
+title: "Standard Extensions"
+description: "All standard RISC-V ISA extensions supported by Spike, organized by category with version information."
+---
+
+Spike supports a comprehensive set of standard RISC-V extensions. Extensions are specified by appending their identifiers to the base ISA string passed to `--isa`.
+
+```bash
+spike --isa=rv64imafdc_zba_zbb_zbs pk program
+```
+
+---
+
+## Integer extensions
+
+| Extension | Description                          | Version |
+|-----------|--------------------------------------|---------|
+| M         | Integer multiply and divide          | v2.0    |
+| Zmmul     | Integer multiplication only          | v1.0    |
+| A         | Atomic instructions                  | v2.1    |
+| Zaamo     | Atomic memory operations             | v1.0    |
+| Zalrsc    | Load-reserved/store-conditional      | v1.0    |
+| Zabha     | Byte and halfword atomics            | v1.0    |
+| Zacas     | Compare-and-swap                     | v1.0    |
+| B         | Bit manipulation (Zba+Zbb+Zbs)       | v1.0    |
+| Zba       | Address generation bit manipulation  | v1.0    |
+| Zbb       | Basic bit manipulation               | v1.0    |
+| Zbc       | Carry-less multiplication            | v1.0    |
+| Zbs       | Single-bit instructions              | v1.0    |
+
+**M** provides multiplication (`MUL`, `MULH`, `MULHSU`, `MULHU`) and division (`DIV`, `DIVU`, `REM`, `REMU`) instructions for integer operands. **Zmmul** is a subset of M containing only the multiply instructions, useful for hardware that omits dividers.
+
+**A** is the full atomics extension. It subsumes **Zaamo** (atomic memory operations: `AMOADD`, `AMOSWAP`, `AMOAND`, `AMOOR`, `AMOXOR`, `AMOMIN`, `AMOMAX`, and unsigned variants) and **Zalrsc** (load-reserved and store-conditional: `LR`, `SC`). **Zabha** extends atomics to byte and halfword widths. **Zacas** adds compare-and-swap (`AMOCAS`) operations.
+
+**B** is an alias that enables the Zba, Zbb, and Zbs extensions together. **Zba** adds address-generation instructions (`SH1ADD`, `SH2ADD`, `SH3ADD`). **Zbb** provides basic bit manipulation (`CLZ`, `CTZ`, `CPOP`, `ANDN`, `ORN`, `XNOR`, rotate, `MIN`/`MAX`). **Zbc** adds carry-less multiplication (`CLMUL`, `CLMULH`, `CLMULR`). **Zbs** provides single-bit operations (`BSET`, `BCLR`, `BINV`, `BEXT`).
+
+---
+
+## Floating-point extensions
+
+| Extension | Description                               | Version |
+|-----------|-------------------------------------------|---------|
+| F         | Single-precision (32-bit) floating-point  | v2.2    |
+| D         | Double-precision (64-bit) floating-point  | v2.2    |
+| Q         | Quad-precision (128-bit) floating-point   | v2.2    |
+| Zfh       | Half-precision (16-bit) floating-point    | v1.0    |
+| Zfhmin    | Half-precision conversions only           | v1.0    |
+| Zfa       | Additional floating-point instructions    | v1.0    |
+| Zfinx     | Floating-point in integer registers       | v1.0    |
+| Zfbfmin   | BFloat16 scalar conversions               | v0.6    |
+
+**F**, **D**, and **Q** form the standard floating-point hierarchy. D requires F; Q requires D. Each adds a dedicated floating-point register file (f0–f31) at the corresponding precision.
+
+**Zfh** adds half-precision (16-bit IEEE 754) operations using the existing floating-point register file. **Zfhmin** is a minimal subset providing only conversion instructions between half-precision and single- or double-precision, for hardware that handles computation in wider formats.
+
+**Zfa** adds additional floating-point instructions including `FMINM`, `FMAXM`, `FROUND`, `FROUNDNX`, `FMVH`, `FMVP`, and `FLEQ`/`FLTQ` quiet comparison variants.
+
+**Zfinx** allows floating-point operations to use integer registers (x0–x31) instead of a separate floating-point register file, reducing hardware cost. It is incompatible with F, D, Q, and Zfh.
+
+**Zfbfmin** adds scalar BFloat16 (brain float, 16-bit truncated single) conversion instructions.
+
+<Note>
+Zfbfmin is at version v0.6, indicating it is not yet fully ratified. Use with caution in production toolchains.
+</Note>
+
+---
+
+## Compressed instructions
+
+| Extension | Description                                      | Version |
+|-----------|--------------------------------------------------|---------|
+| C         | Compressed 16-bit instructions                   | v2.0    |
+| Zca       | C extension integer subset                       | v1.0    |
+| Zcb       | C extension additional integer instructions      | v1.0    |
+| Zcf       | C extension single-precision float loads/stores  | v1.0    |
+| Zcd       | C extension double-precision float loads/stores  | v1.0    |
+| Zcmp      | Compressed function prologue/epilogue            | v1.0    |
+| Zcmt      | Compressed jump table                            | v1.0    |
+
+**C** is the standard compressed instruction extension, adding 16-bit encodings for common instructions to improve code density. It is equivalent to Zca+Zcf+Zcd on RV32 and Zca+Zcd on RV64.
+
+The **Zc\*** extensions decompose C into finer-grained subsets for targets that need only part of the compressed instruction set. **Zcmp** adds push/pop instructions for function prologues and epilogues. **Zcmt** adds table jump instructions for compact indirect calls.
+
+---
+
+## System extensions
+
+| Extension            | Description                                   | Version |
+|----------------------|-----------------------------------------------|---------|
+| Zicsr                | CSR (control and status register) instructions | v2.0    |
+| Zifencei             | Instruction-fetch fence                        | v2.0    |
+| Zicntr               | Base performance counters                      | v2.0    |
+| Zicond               | Integer conditional operations                 | v1.0    |
+| Zimop                | May-be-operations                              | v1.0    |
+| Zawrs                | Wait-on-reservation-set                        | v1.0    |
+| Zicbom               | Cache-block management operations              | v1.0    |
+| Zicbop               | Cache-block prefetch operations                | v1.0    |
+| Zicboz               | Cache-block zero operations                    | v1.0    |
+| Zilsd                | Load/store pair for RV32                       | v1.0    |
+| Zclsd                | Compressed load/store pair                     | v1.0    |
+
+**Zicsr** provides `CSRRW`, `CSRRS`, `CSRRC`, and their immediate variants for reading and writing control and status registers. **Zifencei** adds the `FENCE.I` instruction for synchronizing instruction and data memory.
+
+**Zicntr** exposes the base hardware performance counters: `cycle`, `time`, and `instret` (instructions retired), accessible via `RDCYCLE`, `RDTIME`, and `RDINSTRET`.
+
+**Zicond** adds conditional zero/move instructions (`CZERO.EQZ`, `CZERO.NEZ`) that conditionally produce zero based on a condition register, enabling branchless code patterns.
+
+**Zimop** reserves encoding space for may-be-operations — instructions that can be defined by future extensions but are treated as no-ops by implementations that do not support them.
+
+**Zawrs** adds the `WRS.NTO` and `WRS.STO` instructions for waiting on a reservation set, enabling more efficient spinlock implementations.
+
+**Zicbom**, **Zicbop**, and **Zicboz** provide cache-block maintenance: management operations (flush, invalidate, clean), prefetch hints, and zero-fill operations respectively.
+
+**Zilsd** adds 64-bit load/store pair instructions for RV32 targets. **Zclsd** is the compressed counterpart for RV32.
+
+---
+
+## Privileged extensions
+
+| Extension  | Description                                          | Version     |
+|------------|------------------------------------------------------|-------------|
+| H          | Hypervisor extension                                 | v1.0        |
+| Svnapot    | NAPOT translation contiguity                         | v1.0        |
+| Svpbmt     | Page-based memory types                              | v1.0        |
+| Svinval    | Fine-grain address-translation cache invalidation    | v1.0        |
+| Svadu      | Hardware A/D flag updates                            | v1.0        |
+| Svade      | Address-translation exception on A/D bit access      | v1.0        |
+| Smepmp     | PMP enhancements for Machine mode                    | v1.0        |
+| Smstateen  | Machine-mode state-enable extension                  | v1.0        |
+| Smdbltrp   | Double-trap in Machine mode                          | v1.0        |
+| Ssdbltrp   | Double-trap in Supervisor mode                       | v1.0        |
+| Ssqosid    | Supervisor-mode QoS ID registers                     | v1.0        |
+| Sscofpmf   | Count overflow and mode-based filtering              | v0.5.2      |
+| Sdext      | Debug extension                                      | v1.0-STABLE |
+| Sdtrig     | Debug triggers                                       | v1.0-STABLE |
+| Zicfiss    | Shadow stack (control-flow integrity)                | v1.0        |
+| Zicfilp    | Landing pad (control-flow integrity)                 | v1.0        |
+| P          | Packed SIMD                                          | v0.9.2      |
+| Zvabd      | Vector absolute difference (scalar)                  | v0.7        |
+
+**H** is the Hypervisor extension enabling two-stage address translation and hypervisor-mode CSRs for running virtual machines. Requires Supervisor mode.
+
+The **Sv\*** extensions refine virtual memory behavior. **Svnapot** allows naturally aligned power-of-two (NAPOT) regions to be described in a single page table entry. **Svpbmt** adds memory type bits to page table entries. **Svinval** provides finer-grained TLB invalidation instructions (`SINVAL.VMA`, `SFENCE.W.INVAL`, `SFENCE.INVAL.IR`). **Svadu** enables hardware to set accessed and dirty bits in page table entries automatically. **Svade** causes address-translation faults when the A or D bits are not set, instead of updating them in hardware.
+
+**Smepmp** extends Physical Memory Protection to improve isolation between M-mode and less-privileged software. **Smstateen** adds CSRs that enable or disable access to state introduced by other extensions. **Smdbltrp** and **Ssdbltrp** define behavior when a trap occurs while already handling a trap in Machine or Supervisor mode respectively.
+
+**Ssqosid** provides CSRs for quality-of-service identifiers. **Sscofpmf** adds counter-overflow interrupts and mode-based event filtering for performance monitoring.
+
+**Sdext** and **Sdtrig** implement the RISC-V External Debug specification, including debug mode and hardware trigger support.
+
+**Zicfiss** and **Zicfilp** implement control-flow integrity via shadow stacks and landing pads respectively.
+
+<Warning>
+P (Packed SIMD) is at version v0.9.2 and has not been ratified. Zvabd is at v0.7. These extensions may change before ratification. Sscofpmf is at v0.5.2.
+</Warning>
+
+---
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Base ISAs" href="/reference/base-isas" icon="microchip">
+    RV32I, RV64I, RV32E, and RV64E base instruction sets.
+  </Card>
+  <Card title="Vector Extensions" href="/reference/vector-extensions" icon="list">
+    The V extension and all vector sub-extensions.
+  </Card>
+  <Card title="Cryptography Extensions" href="/reference/cryptography-extensions" icon="lock">
+    Scalar and vector cryptography extension groups.
+  </Card>
+</CardGroup>

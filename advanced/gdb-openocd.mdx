@@ -1,0 +1,161 @@
+---
+title: "GDB and OpenOCD Debugging"
+description: "Attach GDB to a running Spike simulation via OpenOCD and the remote bitbang protocol for full source-level debugging."
+---
+
+Spike implements a JTAG Debug Transport Module (DTM) that is exposed over a TCP socket using the remote bitbang protocol. This allows OpenOCD to connect to Spike as if it were real hardware, and GDB to connect to OpenOCD for full source-level debugging with breakpoints, watchpoints, and memory inspection.
+
+## Architecture
+
+The debugging setup involves three separate processes:
+
+```
+GDB  ──────────────────────────────▶  OpenOCD  ──────────────────────▶  Spike
+     TCP port 3333 (GDB remote)              TCP port 9824 (remote bitbang)
+```
+
+- **Spike** listens on a TCP port for a remote bitbang connection and exposes a RISC-V JTAG DTM (the IDCODE is `0xdeadbeef`, IR length 5)
+- **OpenOCD** connects to Spike via remote bitbang, presents a GDB server
+- **GDB** connects to OpenOCD using the GDB remote serial protocol
+
+## Setup
+
+The following example debugs a rot13 program using semihosting for I/O.
+
+<Steps>
+
+<Step title="Compile with debug information">
+
+Compile your program with `-g` and optimization level `-Og` to preserve debug information. Use `--specs=semihost.specs` so that `printf` and other I/O calls are handled by the host via semihosting rather than requiring a full OS.
+
+```bash
+riscv64-unknown-elf-gcc -g -Og --specs=semihost.specs -o rot13 rot13.c
+```
+
+</Step>
+
+<Step title="Start Spike with remote bitbang enabled">
+
+Run Spike with `--rbb-port` to open a TCP socket for the remote bitbang connection. Specify the memory map with `-m` so the program has a valid region to execute from.
+
+```bash
+spike --rbb-port=9824 -m0x10000:0x20000 rot13
+```
+
+Spike will print:
+
+```text
+Listening for remote bitbang connection on port 9824.
+```
+
+and wait for OpenOCD to connect before the simulation proceeds.
+
+</Step>
+
+<Step title="Create the OpenOCD configuration file">
+
+Create a file named `spike.cfg` with the following contents:
+
+```text
+adapter driver remote_bitbang
+remote_bitbang host localhost
+remote_bitbang port 9824
+
+set _CHIPNAME riscv
+jtag newtap $_CHIPNAME cpu -irlen 5 -expected-id 0xdeadbeef
+
+set _TARGETNAME $_CHIPNAME.cpu
+target create $_TARGETNAME riscv -chain-position $_TARGETNAME
+
+gdb report_data_abort enable
+
+init
+arm semihosting enable
+halt
+```
+
+The `irlen 5` and `expected-id 0xdeadbeef` values match the constants in Spike's `jtag_dtm_t` implementation. The `arm semihosting enable` line is required when using `--specs=semihost.specs`.
+
+</Step>
+
+<Step title="Start OpenOCD">
+
+In a separate terminal, launch OpenOCD with the configuration file:
+
+```bash
+openocd -f spike.cfg
+```
+
+OpenOCD will connect to Spike, enumerate the target, halt it, and start a GDB server:
+
+```text
+Info : starting gdb server for riscv.cpu on 3333
+Info : Listening on port 3333 for gdb connections
+riscv.cpu halted due to debug-request. Semihosting is active.
+riscv.cpu: target state: halted
+```
+
+</Step>
+
+<Step title="Connect GDB">
+
+In a third terminal, start GDB and connect to the OpenOCD GDB server:
+
+```bash
+riscv64-unknown-elf-gdb rot13
+```
+
+Then at the GDB prompt:
+
+```text
+(gdb) target extended-remote localhost:3333
+(gdb) load
+(gdb) set $sp=0x2fff0
+(gdb) b main
+(gdb) c
+```
+
+- `load` transfers the ELF binary into Spike's memory over JTAG
+- `set $sp` initializes the stack pointer, since there is no OS or startup code to do so
+- `b main` sets a breakpoint at `main`
+- `c` continues execution until the breakpoint is hit
+
+</Step>
+
+</Steps>
+
+## Starting Spike halted
+
+Pass `--halted` to start Spike in a halted state immediately on launch, before executing any instructions. This is useful when you want the debugger to be in control from the very first instruction:
+
+```bash
+spike --halted --rbb-port=9824 -m0x10000:0x20000 rot13
+```
+
+<Note>
+Without `--halted`, Spike begins executing immediately and waits for the OpenOCD connection asynchronously. With `--halted`, Spike blocks until a debugger attaches and explicitly resumes execution.
+</Note>
+
+## Debug module options
+
+Spike's debug module behavior can be tuned with the following flags. These affect how OpenOCD and GDB interact with the debug module, and are useful for testing debug software against non-standard hardware configurations.
+
+| Option | Description |
+|--------|-------------|
+| `--triggers=<n>` | Number of hardware triggers (breakpoints/watchpoints). Default: 4 |
+| `--dm-progsize=<words>` | Program buffer size in words for the debug module. Default: 2 |
+| `--dm-datacount=<n>` | Number of abstract data registers. Default: 2 |
+| `--dm-sba=<bits>` | Enable system bus access up to `<bits>` wide. Default: 0 (disabled) |
+| `--dm-auth` | Require the debugger to authenticate before accessing the debug module |
+| `--dmi-rti=<n>` | Run-Test/Idle cycles required per DMI access. Default: 0 |
+| `--dm-abstract-rti=<n>` | Run-Test/Idle cycles required per abstract command. Default: 0 |
+| `--dm-no-hasel` | Disable hart array select (hasel) support |
+| `--dm-no-abstract-csr` | Disable abstract CSR access commands |
+| `--dm-no-abstract-fpr` | Disable abstract floating-point register access |
+| `--dm-no-halt-groups` | Disable halt group support |
+| `--dm-no-impebreak` | Disable implicit `ebreak` at end of program buffer |
+| `--dm-no-abstractauto` | Disable the `abstractauto` register |
+
+<Tip>
+Use `--dm-no-abstract-csr`, `--dm-no-abstract-fpr`, and related flags to simulate a minimal debug module and verify that your debugger falls back to program-buffer-based access correctly.
+</Tip>

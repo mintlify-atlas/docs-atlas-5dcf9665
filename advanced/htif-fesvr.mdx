@@ -1,0 +1,106 @@
+---
+title: "HTIF and Front-End Server"
+description: "Understand how Spike communicates with the host through the Host-Target Interface and what the front-end server provides for ELF loading, syscall proxying, and terminal I/O."
+---
+
+## Overview
+
+Spike simulates a RISC-V target machine, but running useful programs requires services that a real machine would get from firmware, an OS, or external hardware. These services are provided by two cooperating components:
+
+- **HTIF** (Host-Target Interface) — a hardware-level protocol that lets the simulated target communicate with the host process over memory-mapped registers
+- **fesvr** (Front-End Server) — the host-side library that implements HTIF and provides ELF loading, syscall proxying, and terminal I/O
+
+Together they allow programs to run on Spike without a full operating system, with host file I/O and terminal access transparently forwarded.
+
+## The tohost/fromhost mechanism
+
+HTIF defines two memory-mapped locations in the target's address space: `tohost` and `fromhost`. These are resolved by scanning the ELF symbol table for symbols with those names.
+
+```
+Target ──write──▶ tohost   ──▶ fesvr reads and dispatches
+fesvr ──write──▶ fromhost  ──▶ Target polls for responses
+```
+
+The target sends a command by writing a 64-bit value to `tohost`. The fesvr reads it, dispatches it to the appropriate device handler, and writes a response to `fromhost`. The target polls `fromhost` until it sees a non-zero response.
+
+<Note>
+If the ELF binary does not contain `tohost` and `fromhost` symbols, HTIF communication is unavailable. Bare-metal programs that use HTIF must define these symbols, typically in a linker script or startup assembly file.
+</Note>
+
+## What fesvr provides
+
+### ELF loading
+
+fesvr parses the target ELF binary and loads each PT_LOAD segment into the correct physical address in Spike's memory. It reads the entry point from the ELF header and sets the initial program counter accordingly.
+
+Additional ELF payloads can be loaded with `--payload=<path>`, and extra symbol files (for richer backtraces) with `--symbol-elf=<path>`.
+
+### Syscall proxying
+
+The `syscall_t` device in fesvr intercepts `tohost` writes that encode POSIX syscall numbers and arguments. It executes the syscall on the host and writes the result back through `fromhost`. This lets bare-metal programs use file I/O, process exit, and other OS services without requiring a real OS on the target.
+
+Supported syscalls include:
+
+- File operations: `openat`, `read`, `pread`, `write`, `pwrite`, `close`, `lseek`, `fstat`, `fstatat`, `faccessat`, `ftruncate`, `renameat`, `linkat`, `unlinkat`, `mkdirat`, `readlinkat`
+- Directory: `getcwd`, `chdir`
+- Process: `exit`
+- Environment: `getmainvars` (passes `argc`/`argv` to the target)
+
+Use `--chroot=<path>` to restrict syscall file access to a subdirectory of the host filesystem.
+
+### Terminal I/O
+
+The `bcd_t` (Bit-serial Console Device) provides a simple character-at-a-time terminal interface over HTIF. Programs writing to the BCD device produce output on the host terminal. This is how `printf` works in programs using the newlib `htif` or similar bare-metal I/O stubs.
+
+## Bare metal vs. proxy kernel
+
+<CardGroup cols={2}>
+  <Card title="Bare metal with HTIF" icon="microchip">
+    Programs link directly against an HTIF-aware C library (such as newlib with an HTIF backend). They use `tohost`/`fromhost` for all I/O and syscalls. No OS layer is present. The program must set up its own stack and handle its own startup.
+  </Card>
+  <Card title="Proxy kernel (pk)" icon="server">
+    `pk` is a small RISC-V supervisor-mode kernel that runs on top of Spike. It provides ELF loading for user binaries, a full POSIX syscall ABI via `ecall`, and a proper stack setup. Use `pk` when running programs compiled with a standard Linux toolchain.
+  </Card>
+</CardGroup>
+
+### When to use pk
+
+Use `spike pk <program>` when:
+
+- The program is compiled with `riscv64-unknown-elf-gcc` and a standard newlib or Linux-compatible C library
+- The program uses standard `main(argc, argv)` conventions
+- You want a simpler compilation flow without custom linker scripts
+
+```bash
+spike pk hello
+```
+
+### When to use bare metal
+
+Run without `pk` when:
+
+- You are testing firmware, bootloaders, or OS kernels
+- The program provides its own HTIF stubs and linker script
+- You need precise control over the memory map with `-m<base>:<size>`
+
+```bash
+spike -m0x80000000:0x10000000 firmware.elf
+```
+
+## Semihosting
+
+When debugging with GDB via OpenOCD (see [GDB and OpenOCD Debugging](/advanced/gdb-openocd)), compile with `--specs=semihost.specs` to use ARM semihosting for I/O instead of HTIF. OpenOCD's semihosting support intercepts the semihosting `ebreak` calls and forwards them to the host. This does not require `tohost`/`fromhost` symbols.
+
+```bash
+riscv64-unknown-elf-gcc -g -Og --specs=semihost.specs -o rot13 rot13.c
+```
+
+<Warning>
+Semihosting and HTIF syscall proxying are mutually exclusive. A program compiled with `--specs=semihost.specs` should be run under GDB + OpenOCD, not with `spike pk`.
+</Warning>
+
+## fesvr as a library
+
+fesvr is packaged as a standalone shared library (`libriscv-fesvr`). Other simulators and tools can link against it to reuse the ELF loader, HTIF protocol, and syscall proxy without depending on Spike itself. The pkg-config file is `riscv-fesvr.pc`.
+
+When building Spike from source, fesvr is built and installed alongside it. Check `$RISCV/lib/pkgconfig/riscv-fesvr.pc` after installation.

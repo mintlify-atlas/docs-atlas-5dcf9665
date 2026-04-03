@@ -1,0 +1,168 @@
+---
+title: "Cryptography Extensions"
+description: "Scalar and vector RISC-V cryptography extensions supported by Spike, including NIST and ShangMi algorithm suites."
+---
+
+Spike supports the full set of RISC-V cryptography extensions at v1.0 — both scalar extensions (the Zk group) and vector extensions (the Zvk group). These extensions implement standardized cryptographic primitives directly in the ISA, enabling efficient hardware acceleration without external coprocessors.
+
+---
+
+## Scalar cryptography (Zk group)
+
+The scalar cryptography extensions operate on standard integer registers. They are designed for implementations without vector hardware and target single-lane, software-scheduled cryptographic workloads.
+
+### Primitive extensions
+
+| Extension | Algorithm                              | Version |
+|-----------|----------------------------------------|---------|
+| Zbkb      | Bit manipulation for cryptography      | v1.0    |
+| Zbkc      | Carry-less multiplication              | v1.0    |
+| Zbkx      | Crossbar permutations                  | v1.0    |
+| Zknd      | AES decryption (NIST)                  | v1.0    |
+| Zkne      | AES encryption (NIST)                  | v1.0    |
+| Zknh      | SHA-256 and SHA-512 hash (NIST)        | v1.0    |
+| Zksed     | SM4 block cipher (ShangMi)             | v1.0    |
+| Zksh      | SM3 hash function (ShangMi)            | v1.0    |
+| Zkr       | Entropy source (virtual emulation)     | v1.0    |
+
+**Zbkb** provides bit manipulation primitives needed by cryptographic key schedules and data permutations: bit reversal (`BREV8`), byte reversal (`REV8`), pack instructions (`PACK`, `PACKH`, `PACKW`), and rotation instructions (`ROL`, `ROR`, `RORI`).
+
+**Zbkc** adds carry-less multiply instructions (`CLMUL`, `CLMULH`) for use in GCM authentication and similar polynomial-arithmetic operations.
+
+**Zbkx** adds crossbar permutation instructions (`XPERM4`, `XPERM8`) for efficient S-box lookups using registers as lookup tables, a common operation in block ciphers.
+
+**Zknd** provides AES decrypt round instructions: `AES32DSI`, `AES32DSMI` on RV32, and `AES64DS`, `AES64DSM`, `AES64IM` on RV64.
+
+**Zkne** provides AES encrypt round instructions: `AES32ESI`, `AES32ESMI` on RV32, and `AES64ES`, `AES64ESM`, `AES64KS1I`, `AES64KS2` on RV64.
+
+**Zknh** provides SHA-2 hash computation instructions: `SHA256SIG0`, `SHA256SIG1`, `SHA256SUM0`, `SHA256SUM1` for SHA-256; and `SHA512SIG0`, `SHA512SIG1`, `SHA512SUM0`, `SHA512SUM1` for SHA-512 (RV64 only).
+
+**Zksed** provides SM4 block cipher instructions: `SM4ED` (encryption/decryption round) and `SM4KS` (key schedule).
+
+**Zksh** provides SM3 hash function instructions: `SM3P0` and `SM3P1` for message expansion and compression permutations.
+
+#### Zkr: virtual entropy source
+
+**Zkr** provides access to the `seed` CSR, which implements the RISC-V entropy source interface defined in the scalar cryptography specification. Applications poll `seed` to obtain conditioned entropy for seeding a DRBG (Deterministic Random Bit Generator).
+
+<Note>
+In Spike, Zkr is an emulated entropy source. The `seed` CSR returns synthetic random values, not entropy from real hardware. This is suitable for functional testing of software that consumes the entropy source interface, but should not be used to assess the statistical quality or security of entropy.
+</Note>
+
+```bash
+spike --isa=rv64imafd_zkr pk entropy_test
+```
+
+### Suite extensions
+
+The suite extensions group primitives into complete algorithm families for common security profiles.
+
+| Extension | Composition                                         | Description                          | Version |
+|-----------|-----------------------------------------------------|--------------------------------------|---------|
+| Zk        | Zbkb+Zbkc+Zbkx+Zkne+Zknd+Zknh+Zkr                  | Full NIST algorithm suite            | v1.0    |
+| Zkn       | Zbkb+Zbkc+Zbkx+Zkne+Zknd+Zknh                      | NIST algorithms (no entropy source)  | v1.0    |
+| Zks       | Zbkb+Zbkc+Zbkx+Zksed+Zksh                          | ShangMi algorithm suite              | v1.0    |
+
+**Zk** is the complete NIST profile: AES (both encrypt and decrypt), SHA-256, SHA-512, carry-less multiply, crossbar permutation, bit manipulation, and the entropy source. Use this for implementations targeting full NIST compliance.
+
+**Zkn** is identical to Zk but excludes the entropy source (`Zkr`). Use this when the entropy source is provided by separate hardware.
+
+**Zks** bundles the ShangMi suite: SM4 block cipher, SM3 hash, carry-less multiply, crossbar permutation, and bit manipulation.
+
+### ISA string examples — scalar cryptography
+
+```bash
+# Full NIST scalar cryptography suite
+spike --isa=rv64imafdc_zk pk prog
+
+# NIST scalar cryptography without entropy source
+spike --isa=rv64imafdc_zkn pk prog
+
+# ShangMi scalar cryptography
+spike --isa=rv64imafdc_zks pk prog
+
+# Individual primitive extensions
+spike --isa=rv64imafdc_zkne_zknd_zknh pk prog
+
+# AES encryption + SHA-256 only
+spike --isa=rv64imafdc_zbkb_zbkc_zbkx_zkne_zknd_zknh pk prog
+```
+
+---
+
+## Vector cryptography (Zvk group)
+
+The vector cryptography extensions bring the same cryptographic algorithms to the V vector extension, enabling high-throughput parallel processing of multiple blocks or messages simultaneously.
+
+<Note>
+All vector cryptography extensions require the V extension and a 64-bit host. See [Vector Extensions](/reference/vector-extensions) for V extension details and configuration.
+</Note>
+
+### Summary table
+
+| Extension | Algorithm                               | Version |
+|-----------|-----------------------------------------|---------|
+| Zvkned    | Vector AES block cipher (NIST)          | v1.0    |
+| Zvknha    | Vector SHA-256 (NIST)                   | v1.0    |
+| Zvknhb    | Vector SHA-512 (NIST)                   | v1.0    |
+| Zvksed    | Vector SM4 block cipher (ShangMi)       | v1.0    |
+| Zvksh     | Vector SM3 hash (ShangMi)               | v1.0    |
+| Zvkg      | Vector GCM/GMAC                         | v1.0    |
+| Zvkn      | NIST suite (Zvkned+Zvknha+Zvknhb+Zvbb+Zvkt) | v1.0 |
+| Zvknc     | Zvkn + Zvbc                             | v1.0    |
+| Zvkng     | Zvkn + Zvkg                             | v1.0    |
+| Zvks      | ShangMi suite (Zvksed+Zvksh+Zvbb+Zvkt) | v1.0    |
+| Zvksc     | Zvks + Zvbc                             | v1.0    |
+| Zvksg     | Zvks + Zvkg                             | v1.0    |
+
+For detailed descriptions of each vector cryptography extension, see [Vector Extensions — vector cryptography](/reference/vector-extensions#vector-cryptography).
+
+### ISA string examples — vector cryptography
+
+```bash
+# NIST vector cryptography suite
+spike --isa=rv64imafdcv_zvkn pk prog
+
+# ShangMi vector cryptography suite
+spike --isa=rv64imafdcv_zvks pk prog
+
+# NIST suite with GCM support
+spike --isa=rv64imafdcv_zvkng pk prog
+
+# Combined scalar and vector NIST cryptography
+spike --isa=rv64imafdcv_zk_zvkn pk prog
+```
+
+---
+
+## Use cases
+
+Spike's cryptography extension support is useful in several scenarios:
+
+**Validating cryptographic ISA implementations.** Before taping out hardware, verify that software written against the cryptographic ISA extensions runs correctly in a functional simulator. Spike confirms instruction semantics and sequencing are correct.
+
+**Testing cryptographic libraries.** Libraries like OpenSSL, mbedTLS, or WolfSSL may include RISC-V cryptographic intrinsic backends. Spike allows testing those code paths without physical hardware.
+
+**Developing cryptographic software.** Write and debug AES, SHA-2, SHA-3, SM3, or SM4 implementations using the scalar or vector instruction extensions before hardware is available.
+
+**Comparing scalar and vector implementations.** Run both scalar (Zk) and vector (Zvk) variants of a cryptographic routine on Spike to verify functional equivalence before optimizing for a specific microarchitecture.
+
+<Tip>
+Combine scalar and vector cryptography extensions to test software that selects between implementations based on runtime capability detection: `spike --isa=rv64imafdcv_zk_zvkng pk crypto_bench`
+</Tip>
+
+---
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Vector Extensions" href="/reference/vector-extensions" icon="list">
+    The V extension and all vector sub-extensions including Zvk.
+  </Card>
+  <Card title="Standard Extensions" href="/reference/standard-extensions" icon="puzzle-piece">
+    Integer, floating-point, compressed, and system extensions.
+  </Card>
+  <Card title="Base ISAs" href="/reference/base-isas" icon="microchip">
+    RV32I, RV64I, RV32E, and RV64E base instruction sets.
+  </Card>
+</CardGroup>

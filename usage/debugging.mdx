@@ -1,0 +1,210 @@
+---
+title: "Interactive Debugging"
+description: "Use Spike's built-in debug prompt to inspect registers, memory, and step through RISC-V execution one instruction at a time."
+---
+
+Spike includes an interactive debug mode that lets you inspect processor state, set execution conditions, and step through programs without an external debugger.
+
+## Launching debug mode
+
+Add `-d` to start Spike at the debug prompt before any instructions execute:
+
+```bash
+spike -d pk hello
+```
+
+Spike prints the prompt and waits for commands:
+
+```
+(spike)
+```
+
+## Entering debug from a running simulation
+
+Even without `-d`, you can interrupt a running simulation at any time by pressing `Ctrl+C`. Spike drops into the debug prompt and you can issue commands, then resume.
+
+## Debug prompt reference
+
+### Stepping
+
+| Input | Action |
+|-------|--------|
+| Enter (empty) | Step one instruction on all harts |
+| `r` or `run` | Resume execution (until `Ctrl+C`) |
+| `r <n>` | Run for exactly `n` instructions |
+| `rs <n>` | Run silently for `n` instructions (no disassembly output) |
+| `q` or `quit` | End the simulation |
+
+### Inspecting registers
+
+```
+(spike) reg 0 a0
+```
+
+| Command | Description |
+|---------|-------------|
+| `reg <core>` | Display all integer registers for `<core>` |
+| `reg <core> <reg>` | Display one integer register (ABI name or number) |
+| `reg <core> <csr>` | Display a CSR by name (e.g. `mstatus`, `mie`) |
+| `freg <core> <reg>` | Display a floating-point register as raw hex |
+| `fregh <core> <reg>` | Display a floating-point register as half precision |
+| `fregs <core> <reg>` | Display a floating-point register as single precision |
+| `fregd <core> <reg>` | Display a floating-point register as double precision |
+| `vreg <core>` | Display all vector registers for `<core>` |
+| `vreg <core> <reg>` | Display one vector register |
+| `pc <core>` | Display the current PC |
+| `priv <core>` | Display the current privilege level |
+
+`<core>` is a zero-based hart index. For most single-hart simulations use `0`.
+
+```
+(spike) reg 0 a0
+(spike) fregs 0 ft0
+(spike) fregd 0 ft0
+(spike) vreg 0 v1
+(spike) pc 0
+(spike) priv 0
+```
+
+### Inspecting memory
+
+```
+(spike) mem 2020
+```
+
+| Command | Description |
+|---------|-------------|
+| `mem <addr>` | Read physical memory at hex address |
+| `mem <core> <addr>` | Read virtual memory in `<core>` at hex address |
+| `str <addr>` | Print NUL-terminated C string at physical address |
+| `str <core> <addr>` | Print NUL-terminated C string at virtual address |
+
+Addresses are always interpreted as hexadecimal.
+
+```
+(spike) mem 2020
+(spike) mem 0 2020
+(spike) str 0 80002000
+```
+
+### Running until a condition
+
+`until` runs the simulation silently and stops when the specified value is reached:
+
+```
+(spike) until pc 0 2020
+(spike) until reg 0 mie a
+(spike) until mem 2020 50a9907311096993
+```
+
+| Command | Stops when |
+|---------|-----------|
+| `until pc <core> <val>` | PC of `<core>` equals `<val>` |
+| `until reg <core> <reg> <val>` | Register `<reg>` in `<core>` equals `<val>` |
+| `until mem <addr> <val>` | Physical memory at `<addr>` equals `<val>` |
+| `until mem <core> <addr> <val>` | Virtual memory in `<core>` at `<addr>` equals `<val>` |
+| `untiln ...` | Same as `until`, but prints each instruction as it runs |
+
+### Running while a condition holds
+
+`while` is the inverse of `until` — it runs as long as the condition is true:
+
+```
+(spike) while mem 2020 50a9907311096993
+```
+
+Execution stops as soon as the condition becomes false.
+
+### Miscellaneous commands
+
+| Command | Description |
+|---------|-------------|
+| `mtime` | Display the current `mtime` value |
+| `mtimecmp <core>` | Display `mtimecmp` for `<core>` |
+| `dump` | Dump all physical memory regions to binary files on disk |
+| `insn <core>` | Show the raw encoding and disassembly of the current instruction |
+| `h` or `help` | Print all available commands |
+
+## A typical debug session
+
+<Steps>
+  <Step title="Launch in debug mode">
+    ```bash
+    spike -d pk hello
+    ```
+    Spike halts at the first instruction and shows the prompt.
+  </Step>
+  <Step title="Inspect initial register state">
+    ```
+    (spike) reg 0
+    ```
+    Prints all 32 integer registers for hart 0.
+  </Step>
+  <Step title="Run to a specific address">
+    ```
+    (spike) until pc 0 80002468
+    ```
+    Spike runs silently until `PC = 0x80002468`.
+  </Step>
+  <Step title="Inspect a register at that point">
+    ```
+    (spike) reg 0 a0
+    ```
+    Prints the value of `a0` on hart 0.
+  </Step>
+  <Step title="Step one instruction at a time">
+    Press Enter repeatedly to advance one instruction per step.
+  </Step>
+  <Step title="Resume full execution">
+    ```
+    (spike) r
+    ```
+    Runs until completion or the next `Ctrl+C`.
+  </Step>
+</Steps>
+
+## Reading commands from a file
+
+Use `--debug-cmd=<file>` to replay a sequence of debug commands automatically. Each line of the file is executed as if typed at the prompt:
+
+```bash
+spike -d --debug-cmd=my-script.txt pk hello
+```
+
+Example script file:
+
+```text
+until pc 0 80002468
+reg 0 a0
+reg 0 sp
+r
+```
+
+This is useful for automated regression testing or reproducible debugging sessions.
+
+## Socket mode
+
+When Spike is built with Boost.Asio support, the `-s` flag routes debug I/O through a socket instead of stdin/stderr:
+
+```bash
+spike -d -s pk hello
+```
+
+Use this to drive the debug prompt programmatically from a test harness or IDE plugin.
+
+<Note>
+  Socket mode (`-s`) requires Spike to be built with `HAVE_BOOST_ASIO`. Check your build configuration if this flag is not available.
+</Note>
+
+## Source-level debugging with GDB
+
+The interactive debug prompt is useful for quick inspection, but for full source-level debugging with breakpoints, watchpoints, and variable display, use GDB via OpenOCD instead.
+
+<CardGroup cols={2}>
+  <Card title="GDB and OpenOCD" icon="magnifying-glass" href="/advanced/gdb-openocd">
+    Connect GDB to Spike via remote bitbang JTAG for source-level debugging
+  </Card>
+  <Card title="Logging and tracing" icon="list" href="/advanced/logging-tracing">
+    Capture instruction logs and commit logs for post-mortem analysis
+  </Card>
+</CardGroup>

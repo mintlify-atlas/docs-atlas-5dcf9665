@@ -1,0 +1,148 @@
+---
+title: "Running Programs"
+description: "How to run RISC-V programs under Spike, from simple proxy kernel invocations to multi-hart and Linux kernel simulation."
+---
+
+Spike accepts a target program and optional target-side arguments after all host options:
+
+```bash
+spike [host options] <target-program> [target-options]
+```
+
+## Running with the proxy kernel
+
+The most common way to run a RISC-V ELF binary is via `pk` (the RISC-V proxy kernel), which handles system calls by forwarding them to the host OS:
+
+```bash
+# Compile a program with the RISC-V toolchain
+riscv64-unknown-elf-gcc -o hello hello.c
+
+# Run it under Spike with pk
+spike pk hello
+```
+
+`pk` handles `read`, `write`, `exit`, and other basic POSIX calls. It is the right choice for bare C programs and most toolchain testing.
+
+<Note>
+  `pk` must be compiled for the same ISA string you pass to Spike. If you use a non-default ISA, pass the same `--isa=` flag when building `pk`.
+</Note>
+
+## Running a bare-metal ELF directly
+
+If your program handles its own startup and system calls, you can run the ELF without `pk`:
+
+```bash
+spike bare-metal.elf
+```
+
+Spike loads the ELF segments into memory starting at `DRAM_BASE` (0x80000000) and jumps to the ELF entry point. Use `--pc=<address>` to override the entry point:
+
+```bash
+spike --pc=0x80000000 bare-metal.elf
+```
+
+## Multi-hart simulation
+
+Use `-p<n>` to simulate `n` RISC-V harts (hardware threads):
+
+```bash
+# Simulate 4 harts
+spike -p4 pk hello
+```
+
+Harts are numbered 0 through n−1 by default. The number of harts must be at least 1.
+
+### Specifying explicit hart IDs
+
+Use `--hartids` to assign non-contiguous or non-zero-based hart IDs. The number of IDs provided must match the `-p` count (or replace it):
+
+```bash
+# Three harts with IDs 0, 2, and 4
+spike --hartids=0,2,4 pk hello
+```
+
+<Warning>
+  If you specify both `-p` and `--hartids`, the counts must agree. Mismatches cause Spike to exit with an error.
+</Warning>
+
+## Running a Linux kernel
+
+Spike can boot a Linux kernel flat image. Provide the kernel image and, optionally, an initial ramdisk and boot arguments:
+
+```bash
+spike \
+  --kernel=Image \
+  --initrd=rootfs.cpio \
+  --bootargs="root=/dev/ram rw console=ttyS0" \
+  bbl
+```
+
+| Option | Description |
+|--------|-------------|
+| `--kernel=<path>` | Linux flat image (e.g. `Image` or `vmlinux`) |
+| `--initrd=<path>` | Initial ramdisk image |
+| `--bootargs=<args>` | Kernel command-line arguments |
+
+The kernel is loaded at a fixed offset into memory: 2 MiB for RV64, 4 MiB for RV32. Ensure the memory region is large enough to hold both the kernel and initrd.
+
+<Tip>
+  The default memory size is 2048 MiB. For small embedded kernels you can reduce this with `-m<n>` to speed up simulation startup.
+</Tip>
+
+## Stopping after N instructions
+
+Use `--instructions=<n>` to halt simulation after a fixed instruction count. This is useful for benchmarking, reproducible traces, or timeouts in CI:
+
+```bash
+# Stop after 10 million instructions
+spike --instructions=10000000 pk workload
+```
+
+Spike exits cleanly after the specified number of instructions have retired.
+
+## Starting halted for debugger attach
+
+Use `--halted` to start Spike with all harts halted. This lets an external debugger (GDB via OpenOCD) connect and take control before any instructions execute:
+
+```bash
+spike --halted --rbb-port=9824 -m0x10000:0x20000 program.elf
+```
+
+The simulator prints `Listening for remote bitbang connection on port <port>` and waits. See [GDB and OpenOCD](/advanced/gdb-openocd) for the full debugging workflow.
+
+## Common invocation examples
+
+```bash
+# Minimal: run hello world
+spike pk hello
+
+# Run with 2 GiB of memory at the default DRAM base
+spike -m2048 pk hello
+
+# RV32 program with explicit ISA and 4 harts
+spike --isa=rv32gc -p4 pk hello32
+
+# Override entry point for a bare-metal image
+spike --isa=rv64imac --pc=0x20000000 firmware.elf
+
+# Boot Linux with a ramdisk
+spike --kernel=Image --initrd=rootfs.cpio bbl
+
+# Run for exactly 1 billion instructions then exit
+spike --instructions=1000000000 pk benchmark
+```
+
+<CardGroup cols={2}>
+  <Card title="ISA configuration" icon="sliders" href="/usage/isa-configuration">
+    Select base ISAs, privilege modes, and extensions
+  </Card>
+  <Card title="Memory configuration" icon="memory" href="/usage/memory-configuration">
+    Configure memory regions and layout
+  </Card>
+  <Card title="Interactive debugging" icon="bug" href="/usage/debugging">
+    Inspect and control execution at the debug prompt
+  </Card>
+  <Card title="GDB and OpenOCD" icon="magnifying-glass" href="/advanced/gdb-openocd">
+    Full source-level debugging via JTAG
+  </Card>
+</CardGroup>

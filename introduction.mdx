@@ -1,0 +1,68 @@
+---
+title: "Introduction"
+description: "Spike is the official RISC-V ISA reference simulator — the golden model for architecture validation, toolchain testing, OS bring-up, and hardware verification."
+---
+
+Spike implements a functional model of one or more RISC-V harts. It is the canonical reference implementation used across the RISC-V ecosystem to verify that software, hardware designs, and toolchains conform to the RISC-V specification.
+
+## What is Spike?
+
+Spike is a software simulator: it reads RISC-V machine code and executes it, faithfully modeling the architectural behavior defined by the RISC-V ISA specification. Because it tracks the specification precisely, it serves as the **golden reference model** — the authoritative source of truth when there is a question about what correct RISC-V behavior looks like.
+
+The name comes from the golden spike used to celebrate the completion of the US transcontinental railway. In the same spirit, Spike marks a point of completion: a complete, correct reference for the RISC-V architecture.
+
+## Key use cases
+
+**Architecture validation** — Compare Spike's output against a hardware implementation or another simulator to detect deviations from the specification.
+
+**Toolchain testing** — Run compiled binaries through Spike to verify that a compiler, assembler, or linker produces correct code before targeting real hardware.
+
+**OS bring-up** — Boot and debug operating systems on a simulated RISC-V machine without requiring physical hardware.
+
+**Hardware verification** — Use Spike as a co-simulation reference alongside RTL models to confirm that hardware produces the same architectural state.
+
+## Feature overview
+
+Spike supports a comprehensive set of standard RISC-V ISA features, including:
+
+- RV32I, RV64I, RV32E, and RV64E base ISAs
+- Integer, multiply, atomic, floating-point (F, D, Q, Zfh), and vector (V) extensions
+- Compressed instruction extensions (C, Zca, Zcb, Zcf, Zcd, Zcmp, Zcmt)
+- Scalar and vector cryptography extensions (Zk, Zkn, Zks, Zvk groups)
+- Machine, Supervisor, and User privilege modes; Hypervisor extension
+- Virtual memory extensions (Svnapot, Svpbmt, Svinval, Svadu, Svade)
+- Debug extensions (Sdext, Sdtrig) and trigger support
+- Conformance to RVWMO and RVTSO memory ordering models
+
+<Note>
+  Spike is sequentially consistent internally. RVWMO and RVTSO conformance applies to the architectural interface, not to memory-order relaxation between simulated harts.
+</Note>
+
+## Versioning policy
+
+Spike follows [SemVer](https://semver.org/spec/v2.0.0.html):
+
+- **Major** version increments when a backwards-incompatible change is made.
+- **Minor** version increments when new functionality is added in a backwards-compatible way.
+- **Patch** version increments for backwards-compatible bug fixes.
+
+Spike's **principal public API is the RISC-V ISA itself**. The C++ interface to Spike's internals is not a public API and may change without a major version bump. Do not depend on internal C++ interfaces for stable integrations.
+
+The current release is `1.1.1-dev`.
+
+## Explore
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Build and install Spike from source on Linux, macOS, or OpenBSD.
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Compile a C program and run it under Spike in under five minutes.
+  </Card>
+  <Card title="ISA configuration" icon="sliders" href="/usage/isa-configuration">
+    Select base ISAs, privilege modes, and extensions via ISA strings.
+  </Card>
+  <Card title="Interactive debugging" icon="bug" href="/usage/debugging">
+    Inspect registers, memory, and step through execution interactively.
+  </Card>
+</CardGroup>

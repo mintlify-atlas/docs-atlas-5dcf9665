@@ -1,0 +1,324 @@
+---
+title: "Interactive Debug Commands"
+description: "Reference for all commands available in Spike's interactive debug prompt."
+---
+
+## Entering debug mode
+
+<Steps>
+  <Step title="Launch with -d">
+    Start Spike with the `-d` flag to enter the interactive prompt before the first instruction executes.
+
+    ```bash
+    spike -d pk hello
+    ```
+  </Step>
+  <Step title="Or interrupt a running simulation">
+    Press **Ctrl+C** at any time during a running simulation. Spike halts execution and drops to the `(spike)` prompt.
+  </Step>
+</Steps>
+
+Once at the prompt, commands are entered one per line. Pressing **Enter** on an empty line executes a single instruction and redisplays the prompt.
+
+<Tip>
+Use `--debug-cmd=<file>` to feed a sequence of debug commands from a file, or `-s` (requires Boost.Asio) to route debug I/O over a socket.
+</Tip>
+
+---
+
+## Registers
+
+### Integer registers
+
+```
+reg <core> [regname]
+```
+
+Display an integer register in the given core. If `regname` is omitted, all 32 integer registers are printed. Accepts both ABI names (`a0`, `sp`, `ra`, …) and numeric indices (`0`–`31`). Also accepts CSR names (e.g. `mstatus`, `mie`).
+
+```
+(spike) reg 0 a0
+0x000000000000002a
+(spike) reg 0
+  zero: 0x0000000000000000   ra: 0x0000000000010158   sp: 0x000000007fffdf30 ...
+```
+
+### Floating-point registers
+
+```
+freg  <core> <regname>    # raw hex (128-bit NaN-boxed representation)
+fregh <core> <regname>    # as half precision (f16) float
+fregs <core> <regname>    # as single precision (f32) float
+fregd <core> <regname>    # as double precision (f64) float
+```
+
+Display a floating-point register. Use `fregs` or `fregd` for human-readable decimal output; use `freg` for the raw 128-bit hex value. Accepts ABI names (`ft0`–`ft11`, `fa0`–`fa7`, `fs0`–`fs11`) and numeric indices.
+
+```
+(spike) fregs 0 ft0
+3.14159
+(spike) fregd 0 fa0
+2.718281828459045
+(spike) freg 0 ft0
+0x00000000ffffffff40490fdb
+```
+
+### Vector registers
+
+```
+vreg <core> [regname]
+```
+
+Display a vector register. If `regname` is omitted, all vector registers are printed. Also reports `VLEN` and `ELEN` for the selected core. Requires the V extension.
+
+```
+(spike) vreg 0 v0
+VLEN=128 bits; ELEN=64 bits
+v0  : [1]: 0x0000000000000000  [0]: 0x0000000000000001
+```
+
+---
+
+## Program state
+
+### Program counter
+
+```
+pc <core>
+```
+
+Display the current program counter of the given core as a hex address.
+
+```
+(spike) pc 0
+0x0000000000010158
+```
+
+### Current instruction
+
+```
+insn <core>
+```
+
+Display the hex encoding and disassembly of the instruction at the current PC.
+
+```
+(spike) insn 0
+0x00000000000101b4 addi a0, a0, 1
+```
+
+### Privilege mode
+
+```
+priv <core>
+```
+
+Display the current privilege level of the given core (`M`, `S`, or `U`).
+
+```
+(spike) priv 0
+M
+```
+
+---
+
+## Memory
+
+### Read physical or virtual memory
+
+```
+mem <hex addr>           # physical address
+mem <core> <hex addr>    # virtual address (translated via core's MMU)
+```
+
+Display the value at a memory address. The access width is determined automatically by the address alignment: 8 bytes for 8-byte-aligned addresses, 4 bytes for 4-byte-aligned, 2 bytes for 2-byte-aligned, and 1 byte otherwise.
+
+```
+(spike) mem 2020
+0x000000002020a5f3
+(spike) mem 0 2020
+0x000000002020a5f3
+```
+
+### Read a C string
+
+```
+str <hex addr>           # physical address
+str <core> <hex addr>    # virtual address
+```
+
+Read and print a NUL-terminated C string from memory.
+
+```
+(spike) str 0 0x80001000
+Hello, world!
+```
+
+---
+
+## Timers
+
+```
+mtime
+mtimecmp <core>
+```
+
+Display the current `mtime` value from the CLINT, or the `mtimecmp` value for the specified core.
+
+```
+(spike) mtime
+0x000000000000c350
+(spike) mtimecmp 0
+0xffffffffffffffff
+```
+
+---
+
+## Execution control
+
+### Single step
+
+Press **Enter** (empty line) to execute exactly one instruction.
+
+### Run (noisy)
+
+```
+run [count]
+r   [count]
+```
+
+Resume execution, printing each instruction as it executes. If `count` is given, execute at most that many instructions. Stops on Ctrl+C.
+
+```
+(spike) r 10
+core   0: 0x0000000000010158 (0x00000513) li      a0, 0
+core   0: 0x000000000001015c (0x05d00893) li      a7, 93
+...
+```
+
+### Run silently
+
+```
+rs [count]
+```
+
+Resume execution without printing each instruction. If `count` is given, execute at most that many instructions, then return to the prompt. Stops on Ctrl+C.
+
+```
+(spike) rs 1000000
+:
+```
+
+### Run until a condition (silent)
+
+```
+until pc  <core> <hex addr>
+until reg <core> <regname> <hex val>
+until mem [core] <hex addr> <hex val>
+until insn <core> <hex val>
+```
+
+Execute silently until the specified condition becomes true, then return to the prompt. The `mem` variant checks a physical address when `core` is omitted, or a virtual address when `core` is specified.
+
+```
+(spike) until pc 0 2020
+(spike) until reg 0 mie a
+(spike) until mem 2020 50a9907311096993
+```
+
+### Run until a condition (noisy)
+
+```
+untiln pc   <core> <hex addr>
+untiln reg  <core> <regname> <hex val>
+untiln mem  [core] <hex addr> <hex val>
+untiln insn <core> <hex val>
+```
+
+Same as `until`, but prints each instruction while running.
+
+### Run while a condition holds
+
+```
+while pc  <core> <hex val>
+while reg <core> <regname> <hex val>
+while mem [core] <hex addr> <hex val>
+```
+
+Execute while the specified condition is true. Stops when the condition becomes false or Ctrl+C is pressed.
+
+```
+(spike) while mem 2020 50a9907311096993
+```
+
+<Note>
+`until` and `while` values and addresses are always parsed as hexadecimal.
+</Note>
+
+---
+
+## Memory dump
+
+```
+dump
+```
+
+Dump the entire contents of each physical memory region to binary files in the current working directory. Files are named `mem.0x<base_address>.bin`.
+
+---
+
+## Session control
+
+```
+quit
+q
+```
+
+Immediately exit the simulation.
+
+---
+
+## Help
+
+```
+help
+h
+```
+
+Print a summary of all available commands to the terminal.
+
+---
+
+## Register naming
+
+Spike accepts both ABI names and numeric indices for `reg`, `fregs`, `fregd`, etc.
+
+### Integer registers (ABI names)
+
+| ABI name | Number | Description |
+|---|---|---|
+| `zero` | `x0` | Hard-wired zero |
+| `ra` | `x1` | Return address |
+| `sp` | `x2` | Stack pointer |
+| `gp` | `x3` | Global pointer |
+| `tp` | `x4` | Thread pointer |
+| `t0`–`t2` | `x5`–`x7` | Temporaries |
+| `s0` / `fp` | `x8` | Saved register / frame pointer |
+| `s1` | `x9` | Saved register |
+| `a0`–`a7` | `x10`–`x17` | Function arguments / return values |
+| `s2`–`s11` | `x18`–`x27` | Saved registers |
+| `t3`–`t6` | `x28`–`x31` | Temporaries |
+
+### Floating-point registers (ABI names)
+
+| ABI name | Number | Description |
+|---|---|---|
+| `ft0`–`ft7` | `f0`–`f7` | FP temporaries |
+| `fs0`–`fs1` | `f8`–`f9` | FP saved registers |
+| `fa0`–`fa7` | `f10`–`f17` | FP arguments / return values |
+| `fs2`–`fs11` | `f18`–`f27` | FP saved registers |
+| `ft8`–`ft11` | `f28`–`f31` | FP temporaries |
+
+### CSR names
+
+The `reg` command also accepts standard CSR names such as `mstatus`, `mie`, `mip`, `mepc`, `mcause`, `satp`, `sstatus`, `sepc`, and all others defined in the RISC-V privileged specification.
